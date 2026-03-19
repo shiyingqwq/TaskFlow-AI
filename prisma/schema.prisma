@@ -1,0 +1,166 @@
+generator client {
+  provider   = "prisma-client"
+  output     = "../generated/prisma"
+  engineType = "client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum SourceType {
+  text
+  image
+  pdf
+}
+
+enum TaskType {
+  submission
+  collection
+  communication
+  offline
+  production
+  followup
+}
+
+enum DeliveryType {
+  electronic
+  paper
+  both
+  unknown
+}
+
+enum TaskStatus {
+  needs_review
+  ready
+  waiting
+  in_progress
+  pending_submit
+  submitted
+  done
+  overdue
+  ignored
+}
+
+enum RelationType {
+  sequence
+  prerequisite
+  blocks
+}
+
+enum ActionType {
+  created
+  parsed
+  status_changed
+  edited
+  ignored
+  seeded
+}
+
+model Source {
+  id               String   @id @default(cuid())
+  type             SourceType
+  title            String?
+  rawText          String
+  summary          String?
+  originalFilename String?
+  filePath         String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  tasks            Task[]
+}
+
+model AppSetting {
+  id               String   @id @default("default")
+  activeIdentity   String?
+  activeIdentities Json     @default("[]")
+  aiApiKey         String?
+  aiBaseUrl        String?
+  aiModel          String?
+  aiVisionModel    String?
+  aiSupportsVision Boolean  @default(true)
+  focusSummaryText String?
+  focusSummaryMode String?
+  focusSummaryUpdatedAt DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model Task {
+  id                  String        @id @default(cuid())
+  sourceId            String
+  title               String
+  description         String
+  taskType            TaskType
+  recurrenceType      String        @default("single")
+  recurrenceDays      Json          @default("[]")
+  recurrenceTargetCount Int         @default(1)
+  recurrenceLimit     Int?
+  deadline            DateTime?
+  deadlineText        String?
+  submitTo            String?
+  submitChannel       String?
+  applicableIdentities Json      @default("[]")
+  identityHint        String?
+  deliveryType        DeliveryType  @default(unknown)
+  requiresSignature   Boolean       @default(false)
+  requiresStamp       Boolean       @default(false)
+  materials           Json
+  dependsOnExternal   Boolean       @default(false)
+  waitingFor          String?
+  waitingReasonType   String?
+  waitingReasonText   String?
+  nextCheckAt         DateTime?
+  status              TaskStatus    @default(needs_review)
+  needsHumanReview    Boolean       @default(false)
+  reviewResolved      Boolean       @default(false)
+  reviewReasons       Json          @default("[]")
+  deadlineInferenceType String?
+  deadlineInferenceRule String?
+  deadlineInferenceReason String?
+  deadlineInferenceConfidence Float?
+  deadlineUsedCurrentYear Boolean   @default(false)
+  deadlineRolledToNextYear Boolean  @default(false)
+  confidence          Float
+  evidenceSnippet     String
+  nextActionSuggestion String
+  priorityScore       Int           @default(0)
+  priorityReason      String        @default("")
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  source              Source        @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  predecessorLinks    Dependency[]  @relation("Successor")
+  successorLinks      Dependency[]  @relation("Predecessor")
+  actionLogs          ActionLog[]
+  progressLogs        TaskProgressLog[]
+}
+
+model Dependency {
+  id                String       @id @default(cuid())
+  predecessorTaskId String
+  successorTaskId   String
+  relationType      RelationType @default(sequence)
+  predecessorTask   Task         @relation("Predecessor", fields: [predecessorTaskId], references: [id], onDelete: Cascade)
+  successorTask     Task         @relation("Successor", fields: [successorTaskId], references: [id], onDelete: Cascade)
+
+  @@unique([predecessorTaskId, successorTaskId])
+}
+
+model ActionLog {
+  id         String     @id @default(cuid())
+  taskId      String
+  actionType  ActionType
+  note        String?
+  createdAt   DateTime   @default(now())
+  task        Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+model TaskProgressLog {
+  id          String   @id @default(cuid())
+  taskId      String
+  completedAt DateTime @default(now())
+  task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, completedAt])
+}

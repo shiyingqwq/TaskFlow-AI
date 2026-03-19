@@ -1,0 +1,94 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f6f1e8;
+  --panel: rgba(255, 252, 246, 0.92);
+  --panel-strong: #fffdf8;
+  --line: rgba(71, 53, 31, 0.14);
+  --text: #1f1b17;
+  --muted: #655a4a;
+  --accent: #b24b2a;
+  --accent-soft: #f4d7ca;
+  --teal: #285f67;
+  --font-body:
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Source Han Sans SC",
+    "Noto Sans CJK SC", "WenQuanYi Micro Hei", sans-serif;
+  --font-heading:
+    "Source Han Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+    "Noto Sans CJK SC", sans-serif;
+}
+
+html {
+  background:
+    radial-gradient(circle at top left, rgba(240, 185, 157, 0.28), transparent 28%),
+    radial-gradient(circle at top right, rgba(88, 133, 140, 0.22), transparent 24%),
+    linear-gradient(180deg, #f7f2ea 0%, #f0e7d7 100%);
+  min-height: 100%;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  color: var(--text);
+  font-family: var(--font-body);
+  line-height: 1.55;
+  letter-spacing: 0.01em;
+  min-height: 100vh;
+  min-height: 100dvh;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-heading);
+  letter-spacing: -0.015em;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+::selection {
+  background: rgba(178, 75, 42, 0.18);
+}
+
+@keyframes codex-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes codex-pulse-bar {
+  0% {
+    transform: translateX(-30%);
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateX(130%);
+    opacity: 0.45;
+  }
+}
+
+.ui-spinner {
+  animation: codex-spin 0.8s linear infinite;
+}
+
+.ui-progress-glow {
+  animation: codex-pulse-bar 1.8s ease-in-out infinite;
+}

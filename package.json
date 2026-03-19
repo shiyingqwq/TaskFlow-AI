@@ -1,0 +1,45 @@
+{
+  "name": "ai-task-decision-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "predev": "npm run prisma:prepare && prisma generate && prisma db push",
+    "build": "next build",
+    "prebuild": "npm run prisma:prepare && prisma generate && prisma db push",
+    "start": "next start",
+    "db:push": "npm run prisma:prepare && prisma db push",
+    "prisma:prepare": "node scripts/prepare-prisma-engines.mjs",
+    "seed": "tsx prisma/seed.ts",
+    "setup": "npm run prisma:prepare && prisma generate && prisma db push",
+    "test": "vitest run",
+    "lint": "eslint . --ext .js,.mjs"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.15.8",
+    "@prisma/adapter-libsql": "^6.5.0",
+    "@prisma/client": "^6.5.0",
+    "@tailwindcss/postcss": "^4.0.17",
+    "dayjs": "^1.11.13",
+    "next": "^15.2.4",
+    "openai": "^4.89.0",
+    "pdf-parse": "^1.1.1",
+    "prisma": "^6.5.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwindcss": "^4.0.17",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "^4.59.0",
+    "@types/node": "^22.13.10",
+    "@types/react": "^19.0.11",
+    "@types/react-dom": "^19.0.4",
+    "eslint": "^9.22.0",
+    "eslint-config-next": "^15.2.4",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.9"
+  }
+}
