@@ -56,7 +56,11 @@ function buildColumnRender(courses: CourseScheduleItem[], slotStartList: number[
       continue;
     }
 
-    const startsNow = courses.find((course) => toMinutes(course.startTime) === slotStart);
+    const slotEnd = slotStart + slotMinutes;
+    const startsNow = courses.find((course) => {
+      const start = toMinutes(course.startTime);
+      return start >= slotStart && start < slotEnd;
+    });
     if (!startsNow) {
       renders.push({ type: "empty" });
       continue;
@@ -64,7 +68,7 @@ function buildColumnRender(courses: CourseScheduleItem[], slotStartList: number[
 
     const courseStart = toMinutes(startsNow.startTime);
     const courseEnd = toMinutes(startsNow.endTime);
-    const duration = Math.max(slotMinutes, courseEnd - courseStart);
+    const duration = Math.max(slotMinutes, courseEnd - slotStart);
     const rowSpan = Math.max(1, Math.ceil(duration / slotMinutes));
     skipRemaining = rowSpan - 1;
     renders.push({
