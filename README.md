@@ -96,6 +96,27 @@ AI_SUPPORTS_VISION="false"
 - 如果当前模型或供应商不支持视觉，把 `AI_SUPPORTS_VISION` 设为 `false`，图片会自动退回 fallback mode
 - 仍兼容旧的 `OPENAI_API_KEY` / `OPENAI_MODEL` 配置
 
+## 钉钉群机器人 Webhook（最快接入）
+
+1. 在钉钉群里添加“自定义机器人”，复制 Webhook 地址。
+2. 如果安全设置选了“加签”，同时复制 `secret`。
+3. 在 `.env` 填入：
+
+```env
+DINGTALK_WEBHOOK_URL="https://oapi.dingtalk.com/robot/send?access_token=..."
+DINGTALK_SECRET="SEC..."
+```
+
+4. 启动项目后，调用接口发送消息：
+
+```bash
+curl -X POST http://localhost:3000/api/notify/dingtalk \
+  -H "Content-Type: application/json" \
+  -d '{"text":"TaskFlow-AI 测试消息：今天 18:00 前提交材料","atAll":false}'
+```
+
+返回 `{"ok":true,...}` 代表发送成功。
+
 ## 两种运行模式
 
 ### 1. 有 `AI_API_KEY` 或 `OPENAI_API_KEY`
@@ -170,7 +191,7 @@ tests/
 - 图片 OCR 仅在配置支持视觉的 AI Provider 时可用，未内置本地 OCR
 - PDF 文本提取依赖 `pdf-parse`，扫描版 PDF 可能无法拿到文本
 - fallback parser 已覆盖核心场景，但对特别复杂或极度模糊的通知仍会进入 `needs_review`
-- 当前是单用户本地 MVP，没有身份系统、协作能力和外部消息接入
+- 当前是单用户本地 MVP，没有身份系统和协作能力
 
 ## 测试
 
