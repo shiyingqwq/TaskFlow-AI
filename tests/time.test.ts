@@ -72,6 +72,22 @@ describe("time parsing", () => {
     expect(result.auditRecord.deadlineInferenceType).toBe("implicit_current_year");
   });
 
+  it("can prefer structured deadline when requested", () => {
+    const base = dayjs.tz("2026-03-18 10:00", "YYYY-MM-DD HH:mm", "Asia/Taipei");
+    const result = normalizeDeadlineInput(
+      {
+        deadlineISO: "2024-03-20T10:00:00.000Z",
+        deadlineText: "3月20号",
+      },
+      base,
+      { preferStructuredDeadline: true },
+    );
+
+    expect(result.deadlineISO?.startsWith("2024-03-20")).toBe(true);
+    expect(result.deadlineText).toBe("3月20号");
+    expect(result.auditRecord.deadlineInferenceType).toBe("manual_datetime");
+  });
+
   it("parses tonight deadlines with explicit hour instead of falling back to 23:00", () => {
     const base = dayjs.tz("2026-03-18 19:41", "YYYY-MM-DD HH:mm", "Asia/Taipei");
     const audit = parseDeadlineWithAudit("请于今晚10点前私聊老师", base);

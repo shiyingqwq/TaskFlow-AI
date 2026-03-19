@@ -441,11 +441,12 @@ async function persistSourceAndTaskInputs(
 
   const createdTasks = await prisma.$transaction(async (tx) => {
     const tasks = [];
+    const preferStructuredDeadline = parsed.mode === "openai";
     for (const taskInput of taskInputs) {
       const normalizedDeadline = normalizeDeadlineInput({
         deadlineISO: taskInput.deadlineISO,
         deadlineText: taskInput.deadlineText,
-      });
+      }, undefined, { preferStructuredDeadline });
       const waiting = normalizeWaitingReasonInput({
         waitingFor: taskInput.waitingFor,
         waitingReasonType: taskInput.waitingReasonType,
@@ -653,12 +654,17 @@ function buildImportSummary(
   };
 }
 
-function buildPreviewTasks(taskInputs: CreationTaskInput[], dependencies: ParsedDependencyInput[]): ImportPreviewTask[] {
+function buildPreviewTasks(
+  taskInputs: CreationTaskInput[],
+  dependencies: ParsedDependencyInput[],
+  options: { preferStructuredDeadline?: boolean } = {},
+): ImportPreviewTask[] {
+  const preferStructuredDeadline = options.preferStructuredDeadline ?? false;
   const preparedTasks = taskInputs.map((taskInput) => {
     const normalizedDeadline = normalizeDeadlineInput({
       deadlineISO: taskInput.deadlineISO,
       deadlineText: taskInput.deadlineText,
-    });
+    }, undefined, { preferStructuredDeadline });
     const waiting = normalizeWaitingReasonInput({
       waitingFor: taskInput.waitingFor,
       waitingReasonType: taskInput.waitingReasonType,
@@ -781,7 +787,7 @@ export async function previewSourceTasks(payload: PersistSourcePayload) {
   };
   const parsed = await parseSourceIntoTasks(parsedInput);
   const taskInputs = enrichTasksForCreation(parsed);
-  const previewTasks = buildPreviewTasks(taskInputs, parsed.dependencies);
+  const previewTasks = buildPreviewTasks(taskInputs, parsed.dependencies, { preferStructuredDeadline: parsed.mode === "openai" });
 
   return {
     mode: parsed.mode,

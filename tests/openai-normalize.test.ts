@@ -4,11 +4,11 @@ import { describe, expect, it } from "vitest";
 import { buildTaskExtractionSystemPrompt, buildTaskExtractionUserPrompt, normalizeDeadline } from "@/lib/parser/openai";
 
 describe("openai deadline normalization", () => {
-  it("prefers the text-inferred current year when AI returns a conflicting historical ISO date", () => {
+  it("prefers AI structured ISO when text parsing conflicts", () => {
     const base = dayjs.tz("2026-03-18 10:00", "YYYY-MM-DD HH:mm", "Asia/Taipei");
     const result = normalizeDeadline("2024-03-20T10:00:00.000Z", "3月20号", base);
 
-    expect(result.deadlineISO?.startsWith("2026-03-20")).toBe(true);
+    expect(result.deadlineISO?.startsWith("2024-03-20")).toBe(true);
     expect(result.deadlineText).toBe("3月20号");
   });
 

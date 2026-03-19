@@ -65,6 +65,10 @@ export type NormalizedDeadlineInput = {
   auditRecord: DeadlineAuditRecord;
 };
 
+type NormalizeDeadlineOptions = {
+  preferStructuredDeadline?: boolean;
+};
+
 export function nowInTaipei() {
   return dayjs().tz(APP_TIMEZONE);
 }
@@ -418,12 +422,27 @@ export function normalizeDeadlineInput(
     deadlineText?: string | null;
   },
   base = nowInTaipei(),
+  options: NormalizeDeadlineOptions = {},
 ): NormalizedDeadlineInput {
   const deadlineText = input.deadlineText?.trim() || null;
   const structuredDeadlineISO = normalizeDeadlineIsoInput(input.deadlineISO);
+  const preferStructuredDeadline = options.preferStructuredDeadline ?? false;
 
   if (deadlineText) {
     const audit = parseDeadlineWithAudit(deadlineText, base);
+    if (structuredDeadlineISO && preferStructuredDeadline) {
+      const reason =
+        audit.deadlineISO && normalizeDeadlineIsoInput(audit.deadlineISO) !== structuredDeadlineISO
+          ? "采用结构化截止时间，原始表达解析结果与结构化时间不一致。"
+          : "采用结构化截止时间，原始表达仅用于保留审计文本。";
+      return {
+        deadline: new Date(structuredDeadlineISO),
+        deadlineISO: structuredDeadlineISO,
+        deadlineText,
+        auditRecord: buildStructuredDeadlineAuditRecord(reason),
+      };
+    }
+
     if (audit.deadlineISO) {
       return {
         deadline: new Date(audit.deadlineISO),

@@ -59,4 +59,26 @@ describe("task review rules", () => {
     expect(result.highRiskItems).toHaveLength(0);
     expect(result.lowRiskItems.length).toBeGreaterThan(0);
   });
+
+  it("flags high-risk review when deadlineISO clearly conflicts with explicit deadlineText time", () => {
+    const result = buildReviewState({
+      taskType: "submission",
+      deliveryType: "electronic",
+      deadline: "2026-03-26T10:00:00.000Z", // 18:00 +08:00
+      deadlineText: "3月26日中午12点",
+      submitTo: "系统",
+      submitChannel: "系统",
+      requiresSignature: false,
+      requiresStamp: false,
+      materials: ["申报表"],
+      dependsOnExternal: false,
+      waitingFor: null,
+      confidence: 0.9,
+      description: "按时完成填报。",
+    });
+
+    expect(result.needsHumanReview).toBe(true);
+    expect(result.highRiskItems.some((item) => item.code === "deadline_conflict")).toBe(true);
+    expect(result.reviewReasons).toContain("截止时间与原文时间表达存在冲突，请确认");
+  });
 });

@@ -15,6 +15,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { TopSectionNav } from "@/components/top-section-nav";
 import { formatDeadline, nowInTaipei } from "@/lib/time";
 import { describeWaitingReason } from "@/lib/waiting";
+import { TodayScheduleBoard } from "@/components/today-schedule-board";
 
 export default async function DashboardPage({
   searchParams,
@@ -416,6 +417,13 @@ export default async function DashboardPage({
               </div>
             </div>
           </section>
+
+          <TodayScheduleBoard
+            mustDoTasks={todayMustDoTasks}
+            shouldDoTasks={todayShouldDoTasks}
+            reminderTasks={todayReminderTasks}
+            canWaitTasks={todayCanWaitTasks}
+          />
 
           <section className="grid gap-4 xl:grid-cols-2">
             <section className="rounded-[28px] border border-rose-200 bg-rose-50 p-5">

@@ -191,6 +191,7 @@ export function normalizeDeadline(deadlineISO: unknown, deadlineText: unknown, b
       deadlineText: normalizeString(deadlineText),
     },
     base,
+    { preferStructuredDeadline: true },
   );
   return {
     deadlineISO: normalized.deadlineISO,
