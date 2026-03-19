@@ -4,6 +4,8 @@ export type AppSettingsRecord = {
   id: string;
   activeIdentity: string | null;
   activeIdentities: unknown;
+  courseSchedule: unknown;
+  courseTableConfig: unknown;
   aiApiKey: string | null;
   aiBaseUrl: string | null;
   aiModel: string | null;
@@ -27,17 +29,23 @@ function isDatabaseNotReadyError(error: unknown) {
 async function sanitizeAppSettingJsonColumns() {
   await prisma.$executeRawUnsafe(`
     UPDATE AppSetting
-    SET activeIdentities = CASE WHEN activeIdentities IS NULL OR TRIM(activeIdentities) = '' THEN '[]' ELSE activeIdentities END
-    WHERE activeIdentities IS NULL OR TRIM(activeIdentities) = ''
+    SET
+      activeIdentities = CASE WHEN activeIdentities IS NULL OR TRIM(activeIdentities) = '' THEN '[]' ELSE activeIdentities END,
+      courseSchedule = CASE WHEN courseSchedule IS NULL OR TRIM(courseSchedule) = '' THEN '[]' ELSE courseSchedule END,
+      courseTableConfig = CASE WHEN courseTableConfig IS NULL OR TRIM(courseTableConfig) = '' THEN '{}' ELSE courseTableConfig END
+    WHERE
+      activeIdentities IS NULL OR TRIM(activeIdentities) = '' OR
+      courseSchedule IS NULL OR TRIM(courseSchedule) = '' OR
+      courseTableConfig IS NULL OR TRIM(courseTableConfig) = ''
   `);
 }
 
 async function ensureAppSettingsRow() {
   await prisma.$executeRawUnsafe(`
     INSERT INTO AppSetting (
-      id, activeIdentity, activeIdentities, aiApiKey, aiBaseUrl, aiModel, aiVisionModel, aiSupportsVision, focusSummaryText, focusSummaryMode, focusSummaryUpdatedAt, createdAt, updatedAt
+      id, activeIdentity, activeIdentities, courseSchedule, courseTableConfig, aiApiKey, aiBaseUrl, aiModel, aiVisionModel, aiSupportsVision, focusSummaryText, focusSummaryMode, focusSummaryUpdatedAt, createdAt, updatedAt
     )
-    SELECT 'default', NULL, '[]', NULL, NULL, NULL, NULL, 1, NULL, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+    SELECT 'default', NULL, '[]', '[]', '{}', NULL, NULL, NULL, NULL, 1, NULL, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
     WHERE NOT EXISTS (SELECT 1 FROM AppSetting WHERE id = 'default')
   `);
 }
@@ -47,7 +55,7 @@ export async function readAppSettingsRecord(): Promise<AppSettingsRecord> {
   await sanitizeAppSettingJsonColumns();
 
   const rows = (await prisma.$queryRawUnsafe(`
-    SELECT id, activeIdentity, activeIdentities, aiApiKey, aiBaseUrl, aiModel, aiVisionModel, aiSupportsVision, focusSummaryText, focusSummaryMode, focusSummaryUpdatedAt, createdAt, updatedAt
+    SELECT id, activeIdentity, activeIdentities, courseSchedule, courseTableConfig, aiApiKey, aiBaseUrl, aiModel, aiVisionModel, aiSupportsVision, focusSummaryText, focusSummaryMode, focusSummaryUpdatedAt, createdAt, updatedAt
     FROM AppSetting
     WHERE id = 'default'
     LIMIT 1
@@ -58,6 +66,8 @@ export async function readAppSettingsRecord(): Promise<AppSettingsRecord> {
       id: "default",
       activeIdentity: null,
       activeIdentities: [],
+      courseSchedule: [],
+      courseTableConfig: {},
       aiApiKey: null,
       aiBaseUrl: null,
       aiModel: null,
@@ -79,6 +89,8 @@ export async function getAppSettings() {
         id: "default",
         activeIdentity: null,
         activeIdentities: [],
+        courseSchedule: [],
+        courseTableConfig: {},
         aiApiKey: null,
         aiBaseUrl: null,
         aiModel: null,
@@ -133,6 +145,28 @@ export async function updateAiSettings(input: {
     input.aiModel,
     input.aiVisionModel,
     input.aiSupportsVision ? 1 : 0,
+  );
+
+  return readAppSettingsRecord();
+}
+
+export async function updateCourseSchedule(input: { courseSchedule: unknown[]; courseTableConfig?: unknown }) {
+  await ensureAppSettingsRow();
+  const shouldUpdateTableConfig = input.courseTableConfig !== undefined;
+  await prisma.$executeRawUnsafe(
+    shouldUpdateTableConfig
+      ? `
+      UPDATE AppSetting
+      SET courseSchedule = ?, courseTableConfig = ?, updatedAt = CURRENT_TIMESTAMP
+      WHERE id = 'default'
+    `
+      : `
+      UPDATE AppSetting
+      SET courseSchedule = ?, updatedAt = CURRENT_TIMESTAMP
+      WHERE id = 'default'
+    `,
+    JSON.stringify(input.courseSchedule),
+    ...(shouldUpdateTableConfig ? [JSON.stringify(input.courseTableConfig)] : []),
   );
 
   return readAppSettingsRecord();

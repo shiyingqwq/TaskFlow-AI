@@ -16,6 +16,10 @@ import { TopSectionNav } from "@/components/top-section-nav";
 import { formatDeadline, nowInTaipei } from "@/lib/time";
 import { describeWaitingReason } from "@/lib/waiting";
 import { TodayScheduleBoard } from "@/components/today-schedule-board";
+import { CourseScheduleSettingCard } from "@/components/course-schedule-setting-card";
+import { normalizeCourseSchedule, normalizeCourseTableConfig } from "@/lib/course-schedule";
+import { TodayCoursesPanel } from "@/components/today-courses-panel";
+import { CourseWeekTable } from "@/components/course-week-table";
 
 export default async function DashboardPage({
   searchParams,
@@ -63,6 +67,8 @@ export default async function DashboardPage({
           ? "blocked"
           : "empty";
   const settings = await getAppSettings();
+  const courseSchedule = normalizeCourseSchedule(settings.courseSchedule);
+  const courseTableConfig = normalizeCourseTableConfig(settings.courseTableConfig);
   const focusSummaryText =
     settings.focusSummaryText ||
     buildFocusSummaryFallback({
@@ -83,7 +89,7 @@ export default async function DashboardPage({
 
   return (
     <main className="space-y-6 pb-10">
-      <TopSectionNav activeSection={section as "overview" | "today" | "tasks" | "sources" | "settings"} filter={filter} />
+      <TopSectionNav activeSection={section as "overview" | "today" | "courses" | "tasks" | "sources" | "settings"} filter={filter} />
 
       {section === "overview" ? (
         <>
@@ -414,16 +420,23 @@ export default async function DashboardPage({
                 <span className="rounded-full bg-cyan-50 px-3 py-1.5 text-cyan-800 ring-1 ring-cyan-200">今晚回看 {todayReminderTasks.length}</span>
                 <span className="rounded-full bg-amber-50 px-3 py-1.5 text-amber-800 ring-1 ring-amber-200">顺手推进 {todayShouldDoTasks.length}</span>
                 <span className="rounded-full bg-white px-3 py-1.5 text-[var(--muted)] ring-1 ring-[var(--line)]">可放一放 {todayCanWaitTasks.length}</span>
+                <a className="rounded-full bg-white px-3 py-1.5 text-[var(--muted)] ring-1 ring-[var(--line)] hover:text-[var(--accent)]" href="/?section=courses">
+                  查看周课表
+                </a>
               </div>
             </div>
           </section>
 
-          <TodayScheduleBoard
-            mustDoTasks={todayMustDoTasks}
-            shouldDoTasks={todayShouldDoTasks}
-            reminderTasks={todayReminderTasks}
-            canWaitTasks={todayCanWaitTasks}
-          />
+          <section className="grid gap-4 xl:grid-cols-2">
+            <TodayCoursesPanel courseSchedule={courseSchedule} />
+            <TodayScheduleBoard
+              mustDoTasks={todayMustDoTasks}
+              shouldDoTasks={todayShouldDoTasks}
+              reminderTasks={todayReminderTasks}
+              canWaitTasks={todayCanWaitTasks}
+              courseSchedule={courseSchedule}
+            />
+          </section>
 
           <section className="grid gap-4 xl:grid-cols-2">
             <section className="rounded-[28px] border border-rose-200 bg-rose-50 p-5">
@@ -558,6 +571,25 @@ export default async function DashboardPage({
         </>
       ) : null}
 
+      {section === "courses" ? (
+        <section className="space-y-4">
+          <section className="rounded-[32px] border border-[var(--line)] bg-[var(--panel)] p-6 shadow-[0_18px_40px_rgba(90,67,35,0.07)]">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.28em] text-[var(--muted)]">Courses</p>
+                <h2 className="mt-2 text-3xl font-semibold">课程表分栏</h2>
+                <p className="mt-2 max-w-3xl text-sm leading-7 text-[var(--muted)]">这里专门展示课程约束与周课表网格，不和任务列表混排。</p>
+              </div>
+              <Link className="rounded-full border border-[var(--line)] bg-white px-4 py-2 text-sm text-[var(--muted)] hover:text-[var(--accent)]" href="/?section=settings">
+                去设置课表
+              </Link>
+            </div>
+          </section>
+          <TodayCoursesPanel courseSchedule={courseSchedule} />
+          <CourseWeekTable courseSchedule={courseSchedule} tableConfig={courseTableConfig} />
+        </section>
+      ) : null}
+
       {section === "tasks" ? (
         <>
           <section className="grid gap-4 xl:grid-cols-[0.92fr_1.08fr]">
@@ -678,6 +710,14 @@ export default async function DashboardPage({
             initialSupportsVision={settings.aiSupportsVision}
             initialVisionModel={settings.aiVisionModel ?? ""}
           />
+          <CourseScheduleSettingCard initialCourses={courseSchedule} initialTableConfig={courseTableConfig} />
+          <section className="rounded-[28px] border border-[var(--line)] bg-[var(--panel)] p-5">
+            <h3 className="text-xl font-semibold">课表预览</h3>
+            <p className="mt-2 text-sm text-[var(--muted)]">保存课表后，可去“课表”分栏查看周视图网格。</p>
+            <Link className="mt-4 inline-flex rounded-full border border-[var(--line)] bg-white px-4 py-2 text-sm text-[var(--muted)] hover:text-[var(--accent)]" href="/?section=courses">
+              去看周课表
+            </Link>
+          </section>
         </section>
       ) : null}
 

@@ -75,6 +75,8 @@ model AppSetting {
   id               String   @id @default("default")
   activeIdentity   String?
   activeIdentities Json     @default("[]")
+  courseSchedule   Json     @default("[]")
+  courseTableConfig Json?
   aiApiKey         String?
   aiBaseUrl        String?
   aiModel          String?

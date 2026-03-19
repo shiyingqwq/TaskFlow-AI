@@ -58,6 +58,8 @@ export type AppSettingCountAggregateOutputType = {
   id: number
   activeIdentity: number
   activeIdentities: number
+  courseSchedule: number
+  courseTableConfig: number
   aiApiKey: number
   aiBaseUrl: number
   aiModel: number
@@ -106,6 +108,8 @@ export type AppSettingCountAggregateInputType = {
   id?: true
   activeIdentity?: true
   activeIdentities?: true
+  courseSchedule?: true
+  courseTableConfig?: true
   aiApiKey?: true
   aiBaseUrl?: true
   aiModel?: true
@@ -195,6 +199,8 @@ export type AppSettingGroupByOutputType = {
   id: string
   activeIdentity: string | null
   activeIdentities: runtime.JsonValue
+  courseSchedule: runtime.JsonValue
+  courseTableConfig: runtime.JsonValue | null
   aiApiKey: string | null
   aiBaseUrl: string | null
   aiModel: string | null
@@ -232,6 +238,8 @@ export type AppSettingWhereInput = {
   id?: Prisma.StringFilter<"AppSetting"> | string
   activeIdentity?: Prisma.StringNullableFilter<"AppSetting"> | string | null
   activeIdentities?: Prisma.JsonFilter<"AppSetting">
+  courseSchedule?: Prisma.JsonFilter<"AppSetting">
+  courseTableConfig?: Prisma.JsonNullableFilter<"AppSetting">
   aiApiKey?: Prisma.StringNullableFilter<"AppSetting"> | string | null
   aiBaseUrl?: Prisma.StringNullableFilter<"AppSetting"> | string | null
   aiModel?: Prisma.StringNullableFilter<"AppSetting"> | string | null
@@ -248,6 +256,8 @@ export type AppSettingOrderByWithRelationInput = {
   id?: Prisma.SortOrder
   activeIdentity?: Prisma.SortOrderInput | Prisma.SortOrder
   activeIdentities?: Prisma.SortOrder
+  courseSchedule?: Prisma.SortOrder
+  courseTableConfig?: Prisma.SortOrderInput | Prisma.SortOrder
   aiApiKey?: Prisma.SortOrderInput | Prisma.SortOrder
   aiBaseUrl?: Prisma.SortOrderInput | Prisma.SortOrder
   aiModel?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -267,6 +277,8 @@ export type AppSettingWhereUniqueInput = Prisma.AtLeast<{
   NOT?: Prisma.AppSettingWhereInput | Prisma.AppSettingWhereInput[]
   activeIdentity?: Prisma.StringNullableFilter<"AppSetting"> | string | null
   activeIdentities?: Prisma.JsonFilter<"AppSetting">
+  courseSchedule?: Prisma.JsonFilter<"AppSetting">
+  courseTableConfig?: Prisma.JsonNullableFilter<"AppSetting">
   aiApiKey?: Prisma.StringNullableFilter<"AppSetting"> | string | null
   aiBaseUrl?: Prisma.StringNullableFilter<"AppSetting"> | string | null
   aiModel?: Prisma.StringNullableFilter<"AppSetting"> | string | null
@@ -283,6 +295,8 @@ export type AppSettingOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
   activeIdentity?: Prisma.SortOrderInput | Prisma.SortOrder
   activeIdentities?: Prisma.SortOrder
+  courseSchedule?: Prisma.SortOrder
+  courseTableConfig?: Prisma.SortOrderInput | Prisma.SortOrder
   aiApiKey?: Prisma.SortOrderInput | Prisma.SortOrder
   aiBaseUrl?: Prisma.SortOrderInput | Prisma.SortOrder
   aiModel?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -305,6 +319,8 @@ export type AppSettingScalarWhereWithAggregatesInput = {
   id?: Prisma.StringWithAggregatesFilter<"AppSetting"> | string
   activeIdentity?: Prisma.StringNullableWithAggregatesFilter<"AppSetting"> | string | null
   activeIdentities?: Prisma.JsonWithAggregatesFilter<"AppSetting">
+  courseSchedule?: Prisma.JsonWithAggregatesFilter<"AppSetting">
+  courseTableConfig?: Prisma.JsonNullableWithAggregatesFilter<"AppSetting">
   aiApiKey?: Prisma.StringNullableWithAggregatesFilter<"AppSetting"> | string | null
   aiBaseUrl?: Prisma.StringNullableWithAggregatesFilter<"AppSetting"> | string | null
   aiModel?: Prisma.StringNullableWithAggregatesFilter<"AppSetting"> | string | null
@@ -321,6 +337,8 @@ export type AppSettingCreateInput = {
   id?: string
   activeIdentity?: string | null
   activeIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  courseSchedule?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  courseTableConfig?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   aiApiKey?: string | null
   aiBaseUrl?: string | null
   aiModel?: string | null
@@ -337,6 +355,8 @@ export type AppSettingUncheckedCreateInput = {
   id?: string
   activeIdentity?: string | null
   activeIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  courseSchedule?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  courseTableConfig?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   aiApiKey?: string | null
   aiBaseUrl?: string | null
   aiModel?: string | null
@@ -353,6 +373,8 @@ export type AppSettingUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   activeIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   activeIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  courseSchedule?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  courseTableConfig?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   aiApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   aiBaseUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   aiModel?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -369,6 +391,8 @@ export type AppSettingUncheckedUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   activeIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   activeIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  courseSchedule?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  courseTableConfig?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   aiApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   aiBaseUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   aiModel?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -385,6 +409,8 @@ export type AppSettingCreateManyInput = {
   id?: string
   activeIdentity?: string | null
   activeIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  courseSchedule?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  courseTableConfig?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   aiApiKey?: string | null
   aiBaseUrl?: string | null
   aiModel?: string | null
@@ -401,6 +427,8 @@ export type AppSettingUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   activeIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   activeIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  courseSchedule?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  courseTableConfig?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   aiApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   aiBaseUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   aiModel?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -417,6 +445,8 @@ export type AppSettingUncheckedUpdateManyInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   activeIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   activeIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  courseSchedule?: Prisma.JsonNullValueInput | runtime.InputJsonValue
+  courseTableConfig?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   aiApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   aiBaseUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   aiModel?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -433,6 +463,8 @@ export type AppSettingCountOrderByAggregateInput = {
   id?: Prisma.SortOrder
   activeIdentity?: Prisma.SortOrder
   activeIdentities?: Prisma.SortOrder
+  courseSchedule?: Prisma.SortOrder
+  courseTableConfig?: Prisma.SortOrder
   aiApiKey?: Prisma.SortOrder
   aiBaseUrl?: Prisma.SortOrder
   aiModel?: Prisma.SortOrder
@@ -489,6 +521,8 @@ export type AppSettingSelect<ExtArgs extends runtime.Types.Extensions.InternalAr
   id?: boolean
   activeIdentity?: boolean
   activeIdentities?: boolean
+  courseSchedule?: boolean
+  courseTableConfig?: boolean
   aiApiKey?: boolean
   aiBaseUrl?: boolean
   aiModel?: boolean
@@ -505,6 +539,8 @@ export type AppSettingSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Ex
   id?: boolean
   activeIdentity?: boolean
   activeIdentities?: boolean
+  courseSchedule?: boolean
+  courseTableConfig?: boolean
   aiApiKey?: boolean
   aiBaseUrl?: boolean
   aiModel?: boolean
@@ -521,6 +557,8 @@ export type AppSettingSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Ex
   id?: boolean
   activeIdentity?: boolean
   activeIdentities?: boolean
+  courseSchedule?: boolean
+  courseTableConfig?: boolean
   aiApiKey?: boolean
   aiBaseUrl?: boolean
   aiModel?: boolean
@@ -537,6 +575,8 @@ export type AppSettingSelectScalar = {
   id?: boolean
   activeIdentity?: boolean
   activeIdentities?: boolean
+  courseSchedule?: boolean
+  courseTableConfig?: boolean
   aiApiKey?: boolean
   aiBaseUrl?: boolean
   aiModel?: boolean
@@ -549,7 +589,7 @@ export type AppSettingSelectScalar = {
   updatedAt?: boolean
 }
 
-export type AppSettingOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "activeIdentity" | "activeIdentities" | "aiApiKey" | "aiBaseUrl" | "aiModel" | "aiVisionModel" | "aiSupportsVision" | "focusSummaryText" | "focusSummaryMode" | "focusSummaryUpdatedAt" | "createdAt" | "updatedAt", ExtArgs["result"]["appSetting"]>
+export type AppSettingOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "activeIdentity" | "activeIdentities" | "courseSchedule" | "courseTableConfig" | "aiApiKey" | "aiBaseUrl" | "aiModel" | "aiVisionModel" | "aiSupportsVision" | "focusSummaryText" | "focusSummaryMode" | "focusSummaryUpdatedAt" | "createdAt" | "updatedAt", ExtArgs["result"]["appSetting"]>
 
 export type $AppSettingPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "AppSetting"
@@ -558,6 +598,8 @@ export type $AppSettingPayload<ExtArgs extends runtime.Types.Extensions.Internal
     id: string
     activeIdentity: string | null
     activeIdentities: runtime.JsonValue
+    courseSchedule: runtime.JsonValue
+    courseTableConfig: runtime.JsonValue | null
     aiApiKey: string | null
     aiBaseUrl: string | null
     aiModel: string | null
@@ -994,6 +1036,8 @@ export interface AppSettingFieldRefs {
   readonly id: Prisma.FieldRef<"AppSetting", 'String'>
   readonly activeIdentity: Prisma.FieldRef<"AppSetting", 'String'>
   readonly activeIdentities: Prisma.FieldRef<"AppSetting", 'Json'>
+  readonly courseSchedule: Prisma.FieldRef<"AppSetting", 'Json'>
+  readonly courseTableConfig: Prisma.FieldRef<"AppSetting", 'Json'>
   readonly aiApiKey: Prisma.FieldRef<"AppSetting", 'String'>
   readonly aiBaseUrl: Prisma.FieldRef<"AppSetting", 'String'>
   readonly aiModel: Prisma.FieldRef<"AppSetting", 'String'>

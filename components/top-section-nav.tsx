@@ -1,10 +1,11 @@
 import Link from "next/link";
 
-type SectionValue = "overview" | "today" | "tasks" | "sources" | "settings";
+type SectionValue = "overview" | "today" | "courses" | "tasks" | "sources" | "settings";
 
 const sectionOptions: Array<{ value: SectionValue; label: string }> = [
   { value: "overview", label: "总览" },
   { value: "today", label: "今日" },
+  { value: "courses", label: "课表" },
   { value: "tasks", label: "任务" },
   { value: "sources", label: "来源" },
   { value: "settings", label: "设置" },

@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { CourseScheduleItem, getCourseOverlapMinutes, getCoursesForDay } from "@/lib/course-schedule";
 import type { TaskStatus } from "@/generated/prisma/enums";
 import { formatDeadline } from "@/lib/time";
 import { StatusBadge } from "@/components/status-badge";
@@ -18,12 +19,15 @@ type TodayScheduleBoardProps = {
   shouldDoTasks: ScheduleTask[];
   reminderTasks: ScheduleTask[];
   canWaitTasks: ScheduleTask[];
+  courseSchedule: CourseScheduleItem[];
 };
 
 type ScheduleSlot = {
   id: string;
   label: string;
   period: string;
+  startTime: string;
+  endTime: string;
   hint: string;
   tasks: ScheduleTask[];
 };
@@ -45,41 +49,71 @@ function takeDistinct(tasks: ScheduleTask[], usedIds: Set<string>, count: number
 
 function buildScheduleSlots(input: TodayScheduleBoardProps): ScheduleSlot[] {
   const usedIds = new Set<string>();
-  const morning = takeDistinct(input.mustDoTasks, usedIds, 2);
-  const afternoon = takeDistinct([...input.mustDoTasks, ...input.shouldDoTasks], usedIds, 2);
-  const evening = takeDistinct([...input.reminderTasks, ...input.shouldDoTasks], usedIds, 2);
-  const buffer = takeDistinct([...input.canWaitTasks, ...input.shouldDoTasks], usedIds, 1);
-
-  return [
+  const todayCourses = getCoursesForDay(input.courseSchedule);
+  const slots: ScheduleSlot[] = [
     {
       id: "morning",
       label: "上午主线",
       period: "09:00 - 11:30",
+      startTime: "09:00",
+      endTime: "11:30",
       hint: "先啃最硬的一到两件，避免被消息打断。",
-      tasks: morning,
+      tasks: [],
     },
     {
       id: "afternoon",
       label: "下午推进",
       period: "14:00 - 17:30",
+      startTime: "14:00",
+      endTime: "17:30",
       hint: "处理提交、跑流程、沟通确认等执行项。",
-      tasks: afternoon,
+      tasks: [],
     },
     {
       id: "evening",
       label: "晚间回看",
       period: "19:30 - 21:00",
+      startTime: "19:30",
+      endTime: "21:00",
       hint: "集中回看等待项并补一轮跟进。",
-      tasks: evening,
+      tasks: [],
     },
     {
       id: "buffer",
       label: "收尾缓冲",
       period: "21:00 - 21:30",
+      startTime: "21:00",
+      endTime: "21:30",
       hint: "确认明天第一件事，把能延后的任务后置。",
-      tasks: buffer,
+      tasks: [],
     },
   ];
+
+  const slotCourseMap = new Map<string, CourseScheduleItem[]>();
+  for (const slot of slots) {
+    const blockingCourses = todayCourses.filter((course) => getCourseOverlapMinutes(course, slot) >= 60);
+    slotCourseMap.set(slot.id, blockingCourses);
+  }
+
+  for (const slot of slots) {
+    const hasClassConflict = (slotCourseMap.get(slot.id) ?? []).length > 0;
+    if (hasClassConflict) {
+      slot.tasks = [];
+      continue;
+    }
+
+    if (slot.id === "morning") {
+      slot.tasks = takeDistinct(input.mustDoTasks, usedIds, 2);
+    } else if (slot.id === "afternoon") {
+      slot.tasks = takeDistinct([...input.mustDoTasks, ...input.shouldDoTasks], usedIds, 2);
+    } else if (slot.id === "evening") {
+      slot.tasks = takeDistinct([...input.reminderTasks, ...input.shouldDoTasks], usedIds, 2);
+    } else {
+      slot.tasks = takeDistinct([...input.canWaitTasks, ...input.shouldDoTasks], usedIds, 1);
+    }
+  }
+
+  return slots;
 }
 
 export function TodayScheduleBoard(props: TodayScheduleBoardProps) {
@@ -102,7 +136,11 @@ export function TodayScheduleBoard(props: TodayScheduleBoardProps) {
 
             <div className="mt-3 space-y-3">
               {slot.tasks.length === 0 ? (
-                <p className="rounded-xl bg-[var(--panel)] px-3 py-2 text-sm text-[var(--muted)] ring-1 ring-[var(--line)]">当前没有自动分配任务，可按实际情况自由安排。</p>
+                <p className="rounded-xl bg-[var(--panel)] px-3 py-2 text-sm text-[var(--muted)] ring-1 ring-[var(--line)]">
+                  {getCoursesForDay(props.courseSchedule).some((course) => getCourseOverlapMinutes(course, slot) >= 60)
+                    ? "该时段被课程占用，系统已避免排入任务。"
+                    : "当前没有自动分配任务，可按实际情况自由安排。"}
+                </p>
               ) : (
                 slot.tasks.map((task) => (
                   <div className="rounded-xl bg-white px-3 py-3 ring-1 ring-[var(--line)]" key={task.id}>
