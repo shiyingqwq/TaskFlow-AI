@@ -32,6 +32,7 @@ type Props = {
     waitingReasonText: string | null;
     nextCheckAt: string | null;
     nextActionSuggestion: string;
+    estimatedMinutes: number | null;
     status: keyof typeof statusLabels;
     materials: string[];
     taskType: keyof typeof taskTypeLabels;
@@ -70,6 +71,7 @@ export function TaskEditForm({ task }: Props) {
     waitingReasonText: task.waitingReasonText ?? task.waitingFor ?? "",
     nextCheckAt: isoToLocal(task.nextCheckAt),
     nextActionSuggestion: task.nextActionSuggestion,
+    estimatedMinutes: task.estimatedMinutes ?? null,
     status: task.status === "submitted" ? "done" : task.status,
     materials: task.materials.join("、"),
     taskType: task.taskType,
@@ -93,6 +95,7 @@ export function TaskEditForm({ task }: Props) {
         recurrenceLimit: form.recurrenceType === "limited" ? Number(form.recurrenceLimit || 1) : null,
         deadlineISO: form.deadlineISO ? new Date(form.deadlineISO).toISOString() : null,
         nextCheckAt: form.nextCheckAt ? new Date(form.nextCheckAt).toISOString() : null,
+        estimatedMinutes: form.estimatedMinutes ? Number(form.estimatedMinutes) : null,
         waitingFor: form.waitingReasonText || form.waitingFor || null,
         recurrenceTargetCount: Number(form.recurrenceTargetCount || 1),
         materials: form.materials
@@ -274,6 +277,23 @@ export function TaskEditForm({ task }: Props) {
               </option>
             ))}
           </select>
+        </label>
+        <label className="space-y-1 text-sm text-[var(--muted)]">
+          <span>预估时长（分钟）</span>
+          <input
+            className="w-full rounded-2xl border border-[var(--line)] bg-white px-3 py-2 text-[var(--text)] outline-none focus:border-[var(--accent)]"
+            min={10}
+            max={480}
+            onChange={(event) =>
+              setForm((prev) => ({
+                ...prev,
+                estimatedMinutes: event.target.value ? Number(event.target.value) : null,
+              }))
+            }
+            placeholder="例如 45"
+            type="number"
+            value={form.estimatedMinutes ?? ""}
+          />
         </label>
         <label className="space-y-1 text-sm text-[var(--muted)]">
           <span>是否依赖他人</span>

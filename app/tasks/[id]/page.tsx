@@ -235,6 +235,7 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
             waitingReasonText: task.waitingReasonText,
             nextCheckAt: task.nextCheckAt?.toISOString() ?? null,
             nextActionSuggestion: task.nextActionSuggestion,
+            estimatedMinutes: task.estimatedMinutes,
             status: task.status,
             materials,
             taskType: task.taskType,

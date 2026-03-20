@@ -88,6 +88,7 @@ type TaskCoreUpdateInput = {
   waitingReasonText: string | null;
   nextCheckAt: string | Date | null;
   nextActionSuggestion: string;
+  estimatedMinutes: number | null;
   status: TaskStatus;
   materials: string[];
   taskType: TaskType;
@@ -409,6 +410,7 @@ function buildAssistantFallbackTask(rawText: string): ExtractedTaskInput {
     confidence: 0.68,
     evidenceSnippet: compact.slice(0, 80) || "首页 AI 助手创建任务",
     nextActionSuggestion: "先确认这条任务的要求与截止时间，再推进第一步。",
+    estimatedMinutes: null,
   };
 }
 
@@ -518,6 +520,7 @@ async function persistSourceAndTaskInputs(
           confidence: taskInput.confidence,
           evidenceSnippet: taskInput.evidenceSnippet,
           nextActionSuggestion: taskInput.nextActionSuggestion,
+          estimatedMinutes: taskInput.estimatedMinutes ?? null,
         },
       });
 

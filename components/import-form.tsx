@@ -61,6 +61,7 @@ type PreviewTask = {
   confidence: number;
   evidenceSnippet: string;
   nextActionSuggestion: string;
+  estimatedMinutes: number | null;
   status: string;
   displayStatus: string;
   priorityScore: number;
@@ -96,6 +97,7 @@ type ImportCommittedResponse = {
     priorityScore: number;
     priorityReason: string;
     nextActionSuggestion: string;
+    estimatedMinutes: number | null;
   }>;
 };
 
@@ -150,6 +152,7 @@ function stripPreviewTask(task: PreviewTask) {
     confidence: task.confidence,
     evidenceSnippet: task.evidenceSnippet,
     nextActionSuggestion: task.nextActionSuggestion,
+    estimatedMinutes: task.estimatedMinutes,
   };
 }
 
@@ -683,7 +686,7 @@ export function ImportForm() {
                         />
                       </label>
 
-                      <div className="grid gap-3 sm:grid-cols-3">
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                         <label className="space-y-1 text-sm text-[var(--muted)]">
                           <span>截止时间原文</span>
                           <input
@@ -710,6 +713,23 @@ export function ImportForm() {
                             disabled={task.included === false}
                             onChange={(event) => updatePreviewTask(task.index, { submitChannel: event.target.value || null })}
                             value={task.submitChannel ?? ""}
+                          />
+                        </label>
+                        <label className="space-y-1 text-sm text-[var(--muted)]">
+                          <span>预估时长（分钟）</span>
+                          <input
+                            className="w-full rounded-2xl border border-[var(--line)] bg-white px-3 py-2 outline-none focus:border-[var(--accent)]"
+                            disabled={task.included === false}
+                            max={480}
+                            min={10}
+                            onChange={(event) =>
+                              updatePreviewTask(task.index, {
+                                estimatedMinutes: event.target.value ? Number(event.target.value) : null,
+                              })
+                            }
+                            placeholder="例如 45"
+                            type="number"
+                            value={task.estimatedMinutes ?? ""}
                           />
                         </label>
                       </div>

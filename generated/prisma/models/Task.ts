@@ -31,6 +31,7 @@ export type TaskAvgAggregateOutputType = {
   recurrenceLimit: number | null
   deadlineInferenceConfidence: number | null
   confidence: number | null
+  estimatedMinutes: number | null
   priorityScore: number | null
 }
 
@@ -39,6 +40,7 @@ export type TaskSumAggregateOutputType = {
   recurrenceLimit: number | null
   deadlineInferenceConfidence: number | null
   confidence: number | null
+  estimatedMinutes: number | null
   priorityScore: number | null
 }
 
@@ -76,6 +78,7 @@ export type TaskMinAggregateOutputType = {
   confidence: number | null
   evidenceSnippet: string | null
   nextActionSuggestion: string | null
+  estimatedMinutes: number | null
   priorityScore: number | null
   priorityReason: string | null
   createdAt: Date | null
@@ -116,6 +119,7 @@ export type TaskMaxAggregateOutputType = {
   confidence: number | null
   evidenceSnippet: string | null
   nextActionSuggestion: string | null
+  estimatedMinutes: number | null
   priorityScore: number | null
   priorityReason: string | null
   createdAt: Date | null
@@ -160,6 +164,7 @@ export type TaskCountAggregateOutputType = {
   confidence: number
   evidenceSnippet: number
   nextActionSuggestion: number
+  estimatedMinutes: number
   priorityScore: number
   priorityReason: number
   createdAt: number
@@ -173,6 +178,7 @@ export type TaskAvgAggregateInputType = {
   recurrenceLimit?: true
   deadlineInferenceConfidence?: true
   confidence?: true
+  estimatedMinutes?: true
   priorityScore?: true
 }
 
@@ -181,6 +187,7 @@ export type TaskSumAggregateInputType = {
   recurrenceLimit?: true
   deadlineInferenceConfidence?: true
   confidence?: true
+  estimatedMinutes?: true
   priorityScore?: true
 }
 
@@ -218,6 +225,7 @@ export type TaskMinAggregateInputType = {
   confidence?: true
   evidenceSnippet?: true
   nextActionSuggestion?: true
+  estimatedMinutes?: true
   priorityScore?: true
   priorityReason?: true
   createdAt?: true
@@ -258,6 +266,7 @@ export type TaskMaxAggregateInputType = {
   confidence?: true
   evidenceSnippet?: true
   nextActionSuggestion?: true
+  estimatedMinutes?: true
   priorityScore?: true
   priorityReason?: true
   createdAt?: true
@@ -302,6 +311,7 @@ export type TaskCountAggregateInputType = {
   confidence?: true
   evidenceSnippet?: true
   nextActionSuggestion?: true
+  estimatedMinutes?: true
   priorityScore?: true
   priorityReason?: true
   createdAt?: true
@@ -433,6 +443,7 @@ export type TaskGroupByOutputType = {
   confidence: number
   evidenceSnippet: string
   nextActionSuggestion: string
+  estimatedMinutes: number | null
   priorityScore: number
   priorityReason: string
   createdAt: Date
@@ -500,6 +511,7 @@ export type TaskWhereInput = {
   confidence?: Prisma.FloatFilter<"Task"> | number
   evidenceSnippet?: Prisma.StringFilter<"Task"> | string
   nextActionSuggestion?: Prisma.StringFilter<"Task"> | string
+  estimatedMinutes?: Prisma.IntNullableFilter<"Task"> | number | null
   priorityScore?: Prisma.IntFilter<"Task"> | number
   priorityReason?: Prisma.StringFilter<"Task"> | string
   createdAt?: Prisma.DateTimeFilter<"Task"> | Date | string
@@ -549,6 +561,7 @@ export type TaskOrderByWithRelationInput = {
   confidence?: Prisma.SortOrder
   evidenceSnippet?: Prisma.SortOrder
   nextActionSuggestion?: Prisma.SortOrder
+  estimatedMinutes?: Prisma.SortOrderInput | Prisma.SortOrder
   priorityScore?: Prisma.SortOrder
   priorityReason?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -601,6 +614,7 @@ export type TaskWhereUniqueInput = Prisma.AtLeast<{
   confidence?: Prisma.FloatFilter<"Task"> | number
   evidenceSnippet?: Prisma.StringFilter<"Task"> | string
   nextActionSuggestion?: Prisma.StringFilter<"Task"> | string
+  estimatedMinutes?: Prisma.IntNullableFilter<"Task"> | number | null
   priorityScore?: Prisma.IntFilter<"Task"> | number
   priorityReason?: Prisma.StringFilter<"Task"> | string
   createdAt?: Prisma.DateTimeFilter<"Task"> | Date | string
@@ -650,6 +664,7 @@ export type TaskOrderByWithAggregationInput = {
   confidence?: Prisma.SortOrder
   evidenceSnippet?: Prisma.SortOrder
   nextActionSuggestion?: Prisma.SortOrder
+  estimatedMinutes?: Prisma.SortOrderInput | Prisma.SortOrder
   priorityScore?: Prisma.SortOrder
   priorityReason?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -702,6 +717,7 @@ export type TaskScalarWhereWithAggregatesInput = {
   confidence?: Prisma.FloatWithAggregatesFilter<"Task"> | number
   evidenceSnippet?: Prisma.StringWithAggregatesFilter<"Task"> | string
   nextActionSuggestion?: Prisma.StringWithAggregatesFilter<"Task"> | string
+  estimatedMinutes?: Prisma.IntNullableWithAggregatesFilter<"Task"> | number | null
   priorityScore?: Prisma.IntWithAggregatesFilter<"Task"> | number
   priorityReason?: Prisma.StringWithAggregatesFilter<"Task"> | string
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"Task"> | Date | string
@@ -745,6 +761,7 @@ export type TaskCreateInput = {
   confidence: number
   evidenceSnippet: string
   nextActionSuggestion: string
+  estimatedMinutes?: number | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -794,6 +811,7 @@ export type TaskUncheckedCreateInput = {
   confidence: number
   evidenceSnippet: string
   nextActionSuggestion: string
+  estimatedMinutes?: number | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -841,6 +859,7 @@ export type TaskUpdateInput = {
   confidence?: Prisma.FloatFieldUpdateOperationsInput | number
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
+  estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -890,6 +909,7 @@ export type TaskUncheckedUpdateInput = {
   confidence?: Prisma.FloatFieldUpdateOperationsInput | number
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
+  estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -938,6 +958,7 @@ export type TaskCreateManyInput = {
   confidence: number
   evidenceSnippet: string
   nextActionSuggestion: string
+  estimatedMinutes?: number | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -981,6 +1002,7 @@ export type TaskUpdateManyMutationInput = {
   confidence?: Prisma.FloatFieldUpdateOperationsInput | number
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
+  estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1025,6 +1047,7 @@ export type TaskUncheckedUpdateManyInput = {
   confidence?: Prisma.FloatFieldUpdateOperationsInput | number
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
+  estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1079,6 +1102,7 @@ export type TaskCountOrderByAggregateInput = {
   confidence?: Prisma.SortOrder
   evidenceSnippet?: Prisma.SortOrder
   nextActionSuggestion?: Prisma.SortOrder
+  estimatedMinutes?: Prisma.SortOrder
   priorityScore?: Prisma.SortOrder
   priorityReason?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -1090,6 +1114,7 @@ export type TaskAvgOrderByAggregateInput = {
   recurrenceLimit?: Prisma.SortOrder
   deadlineInferenceConfidence?: Prisma.SortOrder
   confidence?: Prisma.SortOrder
+  estimatedMinutes?: Prisma.SortOrder
   priorityScore?: Prisma.SortOrder
 }
 
@@ -1127,6 +1152,7 @@ export type TaskMaxOrderByAggregateInput = {
   confidence?: Prisma.SortOrder
   evidenceSnippet?: Prisma.SortOrder
   nextActionSuggestion?: Prisma.SortOrder
+  estimatedMinutes?: Prisma.SortOrder
   priorityScore?: Prisma.SortOrder
   priorityReason?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -1167,6 +1193,7 @@ export type TaskMinOrderByAggregateInput = {
   confidence?: Prisma.SortOrder
   evidenceSnippet?: Prisma.SortOrder
   nextActionSuggestion?: Prisma.SortOrder
+  estimatedMinutes?: Prisma.SortOrder
   priorityScore?: Prisma.SortOrder
   priorityReason?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -1178,6 +1205,7 @@ export type TaskSumOrderByAggregateInput = {
   recurrenceLimit?: Prisma.SortOrder
   deadlineInferenceConfidence?: Prisma.SortOrder
   confidence?: Prisma.SortOrder
+  estimatedMinutes?: Prisma.SortOrder
   priorityScore?: Prisma.SortOrder
 }
 
@@ -1365,6 +1393,7 @@ export type TaskCreateWithoutSourceInput = {
   confidence: number
   evidenceSnippet: string
   nextActionSuggestion: string
+  estimatedMinutes?: number | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -1412,6 +1441,7 @@ export type TaskUncheckedCreateWithoutSourceInput = {
   confidence: number
   evidenceSnippet: string
   nextActionSuggestion: string
+  estimatedMinutes?: number | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -1488,6 +1518,7 @@ export type TaskScalarWhereInput = {
   confidence?: Prisma.FloatFilter<"Task"> | number
   evidenceSnippet?: Prisma.StringFilter<"Task"> | string
   nextActionSuggestion?: Prisma.StringFilter<"Task"> | string
+  estimatedMinutes?: Prisma.IntNullableFilter<"Task"> | number | null
   priorityScore?: Prisma.IntFilter<"Task"> | number
   priorityReason?: Prisma.StringFilter<"Task"> | string
   createdAt?: Prisma.DateTimeFilter<"Task"> | Date | string
@@ -1531,6 +1562,7 @@ export type TaskCreateWithoutSuccessorLinksInput = {
   confidence: number
   evidenceSnippet: string
   nextActionSuggestion: string
+  estimatedMinutes?: number | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -1579,6 +1611,7 @@ export type TaskUncheckedCreateWithoutSuccessorLinksInput = {
   confidence: number
   evidenceSnippet: string
   nextActionSuggestion: string
+  estimatedMinutes?: number | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -1630,6 +1663,7 @@ export type TaskCreateWithoutPredecessorLinksInput = {
   confidence: number
   evidenceSnippet: string
   nextActionSuggestion: string
+  estimatedMinutes?: number | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -1678,6 +1712,7 @@ export type TaskUncheckedCreateWithoutPredecessorLinksInput = {
   confidence: number
   evidenceSnippet: string
   nextActionSuggestion: string
+  estimatedMinutes?: number | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -1740,6 +1775,7 @@ export type TaskUpdateWithoutSuccessorLinksInput = {
   confidence?: Prisma.FloatFieldUpdateOperationsInput | number
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
+  estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1788,6 +1824,7 @@ export type TaskUncheckedUpdateWithoutSuccessorLinksInput = {
   confidence?: Prisma.FloatFieldUpdateOperationsInput | number
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
+  estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1845,6 +1882,7 @@ export type TaskUpdateWithoutPredecessorLinksInput = {
   confidence?: Prisma.FloatFieldUpdateOperationsInput | number
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
+  estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1893,6 +1931,7 @@ export type TaskUncheckedUpdateWithoutPredecessorLinksInput = {
   confidence?: Prisma.FloatFieldUpdateOperationsInput | number
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
+  estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1939,6 +1978,7 @@ export type TaskCreateWithoutActionLogsInput = {
   confidence: number
   evidenceSnippet: string
   nextActionSuggestion: string
+  estimatedMinutes?: number | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -1987,6 +2027,7 @@ export type TaskUncheckedCreateWithoutActionLogsInput = {
   confidence: number
   evidenceSnippet: string
   nextActionSuggestion: string
+  estimatedMinutes?: number | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -2049,6 +2090,7 @@ export type TaskUpdateWithoutActionLogsInput = {
   confidence?: Prisma.FloatFieldUpdateOperationsInput | number
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
+  estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2097,6 +2139,7 @@ export type TaskUncheckedUpdateWithoutActionLogsInput = {
   confidence?: Prisma.FloatFieldUpdateOperationsInput | number
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
+  estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2143,6 +2186,7 @@ export type TaskCreateWithoutProgressLogsInput = {
   confidence: number
   evidenceSnippet: string
   nextActionSuggestion: string
+  estimatedMinutes?: number | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -2191,6 +2235,7 @@ export type TaskUncheckedCreateWithoutProgressLogsInput = {
   confidence: number
   evidenceSnippet: string
   nextActionSuggestion: string
+  estimatedMinutes?: number | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -2253,6 +2298,7 @@ export type TaskUpdateWithoutProgressLogsInput = {
   confidence?: Prisma.FloatFieldUpdateOperationsInput | number
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
+  estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2301,6 +2347,7 @@ export type TaskUncheckedUpdateWithoutProgressLogsInput = {
   confidence?: Prisma.FloatFieldUpdateOperationsInput | number
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
+  estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2347,6 +2394,7 @@ export type TaskCreateManySourceInput = {
   confidence: number
   evidenceSnippet: string
   nextActionSuggestion: string
+  estimatedMinutes?: number | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -2390,6 +2438,7 @@ export type TaskUpdateWithoutSourceInput = {
   confidence?: Prisma.FloatFieldUpdateOperationsInput | number
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
+  estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2437,6 +2486,7 @@ export type TaskUncheckedUpdateWithoutSourceInput = {
   confidence?: Prisma.FloatFieldUpdateOperationsInput | number
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
+  estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2484,6 +2534,7 @@ export type TaskUncheckedUpdateManyWithoutSourceInput = {
   confidence?: Prisma.FloatFieldUpdateOperationsInput | number
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
+  estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2586,6 +2637,7 @@ export type TaskSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   confidence?: boolean
   evidenceSnippet?: boolean
   nextActionSuggestion?: boolean
+  estimatedMinutes?: boolean
   priorityScore?: boolean
   priorityReason?: boolean
   createdAt?: boolean
@@ -2636,6 +2688,7 @@ export type TaskSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   confidence?: boolean
   evidenceSnippet?: boolean
   nextActionSuggestion?: boolean
+  estimatedMinutes?: boolean
   priorityScore?: boolean
   priorityReason?: boolean
   createdAt?: boolean
@@ -2681,6 +2734,7 @@ export type TaskSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   confidence?: boolean
   evidenceSnippet?: boolean
   nextActionSuggestion?: boolean
+  estimatedMinutes?: boolean
   priorityScore?: boolean
   priorityReason?: boolean
   createdAt?: boolean
@@ -2726,13 +2780,14 @@ export type TaskSelectScalar = {
   confidence?: boolean
   evidenceSnippet?: boolean
   nextActionSuggestion?: boolean
+  estimatedMinutes?: boolean
   priorityScore?: boolean
   priorityReason?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type TaskOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "sourceId" | "title" | "description" | "taskType" | "recurrenceType" | "recurrenceDays" | "recurrenceTargetCount" | "recurrenceLimit" | "deadline" | "deadlineText" | "submitTo" | "submitChannel" | "applicableIdentities" | "identityHint" | "deliveryType" | "requiresSignature" | "requiresStamp" | "materials" | "dependsOnExternal" | "waitingFor" | "waitingReasonType" | "waitingReasonText" | "nextCheckAt" | "status" | "needsHumanReview" | "reviewResolved" | "reviewReasons" | "deadlineInferenceType" | "deadlineInferenceRule" | "deadlineInferenceReason" | "deadlineInferenceConfidence" | "deadlineUsedCurrentYear" | "deadlineRolledToNextYear" | "confidence" | "evidenceSnippet" | "nextActionSuggestion" | "priorityScore" | "priorityReason" | "createdAt" | "updatedAt", ExtArgs["result"]["task"]>
+export type TaskOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "sourceId" | "title" | "description" | "taskType" | "recurrenceType" | "recurrenceDays" | "recurrenceTargetCount" | "recurrenceLimit" | "deadline" | "deadlineText" | "submitTo" | "submitChannel" | "applicableIdentities" | "identityHint" | "deliveryType" | "requiresSignature" | "requiresStamp" | "materials" | "dependsOnExternal" | "waitingFor" | "waitingReasonType" | "waitingReasonText" | "nextCheckAt" | "status" | "needsHumanReview" | "reviewResolved" | "reviewReasons" | "deadlineInferenceType" | "deadlineInferenceRule" | "deadlineInferenceReason" | "deadlineInferenceConfidence" | "deadlineUsedCurrentYear" | "deadlineRolledToNextYear" | "confidence" | "evidenceSnippet" | "nextActionSuggestion" | "estimatedMinutes" | "priorityScore" | "priorityReason" | "createdAt" | "updatedAt", ExtArgs["result"]["task"]>
 export type TaskInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   source?: boolean | Prisma.SourceDefaultArgs<ExtArgs>
   predecessorLinks?: boolean | Prisma.Task$predecessorLinksArgs<ExtArgs>
@@ -2795,6 +2850,7 @@ export type $TaskPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     confidence: number
     evidenceSnippet: string
     nextActionSuggestion: string
+    estimatedMinutes: number | null
     priorityScore: number
     priorityReason: string
     createdAt: Date
@@ -3264,6 +3320,7 @@ export interface TaskFieldRefs {
   readonly confidence: Prisma.FieldRef<"Task", 'Float'>
   readonly evidenceSnippet: Prisma.FieldRef<"Task", 'String'>
   readonly nextActionSuggestion: Prisma.FieldRef<"Task", 'String'>
+  readonly estimatedMinutes: Prisma.FieldRef<"Task", 'Int'>
   readonly priorityScore: Prisma.FieldRef<"Task", 'Int'>
   readonly priorityReason: Prisma.FieldRef<"Task", 'String'>
   readonly createdAt: Prisma.FieldRef<"Task", 'DateTime'>

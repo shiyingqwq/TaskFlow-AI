@@ -29,6 +29,7 @@ export const taskExtractionSchema = z.object({
       confidence: z.number().min(0).max(1),
       evidenceSnippet: z.string().min(1),
       nextActionSuggestion: z.string().min(1),
+      estimatedMinutes: z.number().int().min(10).max(480).nullable().optional().default(null),
     }),
   ),
   dependencies: z

@@ -182,6 +182,7 @@ export async function POST(request: Request) {
         priorityScore: task.priorityScore,
         priorityReason: task.priorityReason,
         nextActionSuggestion: task.nextActionSuggestion,
+        estimatedMinutes: task.estimatedMinutes,
       })),
     });
   } catch (error) {

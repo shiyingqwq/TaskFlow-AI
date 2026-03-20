@@ -127,6 +127,7 @@ model Task {
   confidence          Float
   evidenceSnippet     String
   nextActionSuggestion String
+  estimatedMinutes    Int?
   priorityScore       Int           @default(0)
   priorityReason      String        @default("")
   createdAt           DateTime      @default(now())

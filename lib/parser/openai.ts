@@ -25,7 +25,8 @@ export function buildTaskExtractionSystemPrompt(activeIdentities: string[] = [])
 8. evidenceSnippet 必须来自原文，尽量短且能支撑判断。
 9. 今天时间是 ${today}（${APP_TIMEZONE}）。
 10. 如果原文没有写年份，deadlineISO 必须按当前年份推断，不允许写成往年年份。
-11. 输出必须是合法 JSON，不要附加解释。`;
+11. estimatedMinutes 代表预估完成时长（分钟），范围 10-480；不确定可填 null。
+12. 输出必须是合法 JSON，不要附加解释。`;
 }
 
 export function buildTaskExtractionUserPrompt(text: string, activeIdentities: string[] = []) {
@@ -148,6 +149,21 @@ function normalizeConfidence(value: unknown) {
   return Math.max(0, Math.min(1, parsed));
 }
 
+function normalizeEstimatedMinutes(value: unknown) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  const rounded = Math.round(parsed);
+  if (rounded < 10 || rounded > 480) {
+    return null;
+  }
+  return rounded;
+}
+
 function normalizeRecurrenceType(value: unknown): TaskExtractionResult["tasks"][number]["recurrenceType"] {
   const normalized = String(value || "").trim().toLowerCase();
   if (["daily", "每日"].includes(normalized)) return "daily";
@@ -250,6 +266,7 @@ function normalizeTask(task: unknown) {
       normalizeString(raw.evidenceSnippet ?? raw.evidence ?? raw.excerpt ?? raw.sourceSnippet) ?? title,
     nextActionSuggestion:
       normalizeString(raw.nextActionSuggestion ?? raw.nextAction ?? raw.actionSuggestion) ?? "先核对要求，再推进最小可执行的一步。",
+    estimatedMinutes: normalizeEstimatedMinutes(raw.estimatedMinutes ?? raw.estimateMinutes ?? raw.durationMinutes ?? raw.duration),
   };
 }
 

@@ -70,6 +70,7 @@ function createTask(partial: Partial<ExtractedTaskInput> & Pick<ExtractedTaskInp
     waitingReasonText: null,
     nextCheckAt: null,
     confidence: 0.72,
+    estimatedMinutes: null,
     ...partial,
   };
 }

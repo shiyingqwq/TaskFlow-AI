@@ -144,6 +144,7 @@ export const TaskScalarFieldEnum = {
   confidence: 'confidence',
   evidenceSnippet: 'evidenceSnippet',
   nextActionSuggestion: 'nextActionSuggestion',
+  estimatedMinutes: 'estimatedMinutes',
   priorityScore: 'priorityScore',
   priorityReason: 'priorityReason',
   createdAt: 'createdAt',
