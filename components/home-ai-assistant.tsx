@@ -1,12 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 
 type AssistantMessage = {
+  id: string;
   role: "user" | "assistant";
   content: string;
   actionSummaries?: string[];
+  actionImpacts?: Array<{
+    taskId: string;
+    taskTitle: string;
+    changedFields: string[];
+  }>;
   createdTaskCards?: Array<{
     taskId: string;
     title: string;
@@ -15,9 +20,11 @@ type AssistantMessage = {
     needsHumanReview: boolean;
   }>;
   hasPendingAction?: boolean;
+  hasUndoAction?: boolean;
+  isPending?: boolean;
 };
 
-type PendingAction =
+type PlannedAction =
   | {
       type: "update_status";
       taskId: string;
@@ -45,18 +52,63 @@ type PendingAction =
       sourceText: string;
     };
 
+type PendingAction = {
+  type: "confirm_actions";
+  actions: PlannedAction[];
+  previewText?: string;
+  impacts?: Array<{
+    taskId: string;
+    taskTitle: string;
+    changedFields: string[];
+  }>;
+};
+
+type UndoAction = {
+  type: "undo_actions";
+  actions: Array<
+    | {
+        type: "restore_task_snapshot";
+        snapshot: {
+          taskId: string;
+          taskTitle: string;
+          status: string;
+          needsHumanReview: boolean;
+          reviewResolved: boolean;
+          reviewReasons: string[];
+          waitingFor: string | null;
+          waitingReasonType: string | null;
+          waitingReasonText: string | null;
+          nextCheckAt: string | null;
+        };
+      }
+    | {
+        type: "restore_progress_logs";
+        taskId: string;
+        taskTitle: string;
+        completedAts: string[];
+      }
+    | {
+        type: "delete_source";
+        sourceId: string;
+        sourceLabel: string;
+      }
+  >;
+  summary?: string;
+};
+
 const quickPrompts = ["现在最该做什么？", "帮我看待确认队列", "新增任务：明天下午三点去打印材料", "把最紧急那条标记为进行中"];
 
 export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
-  const router = useRouter();
-  const [isRefreshing, startTransition] = useTransition();
   const [isSending, setIsSending] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [draft, setDraft] = useState("");
+  const [hasUnsyncedChanges, setHasUnsyncedChanges] = useState(false);
   const [lastReferencedTaskId, setLastReferencedTaskId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [undoAction, setUndoAction] = useState<UndoAction | null>(null);
   const [messages, setMessages] = useState<AssistantMessage[]>([
     {
+      id: "assistant-welcome",
       role: "assistant",
       content: databaseReady
         ? "我能读首页全部任务，并帮你做常见管理动作。你可以直接问我现在最该做什么，标记任务状态，或者说“新增任务：明天下午三点去打印材料”。"
@@ -64,6 +116,16 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
     },
   ]);
   const messagesRef = useRef<HTMLDivElement | null>(null);
+
+  function generateMessageId(prefix: "user" | "assistant" | "pending") {
+    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  function finalizePendingMessage(pendingId: string, nextMessage: AssistantMessage) {
+    setMessages((current) =>
+      current.map((item) => (item.id === pendingId ? nextMessage : item)),
+    );
+  }
 
   useEffect(() => {
     if (!isOpen) {
@@ -93,14 +155,26 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
 
   async function sendMessage(raw: string) {
     const message = raw.trim();
-    if (!message || isSending || isRefreshing) {
+    if (!message || isSending) {
       return;
     }
 
     setIsOpen(true);
     setIsSending(true);
-    const nextMessages = [...messages, { role: "user" as const, content: message }];
-    setMessages(nextMessages);
+    const userMessage: AssistantMessage = {
+      id: generateMessageId("user"),
+      role: "user",
+      content: message,
+    };
+    const pendingMessageId = generateMessageId("pending");
+    const optimisticAssistantMessage: AssistantMessage = {
+      id: pendingMessageId,
+      role: "assistant",
+      content: "正在执行你的指令...",
+      isPending: true,
+    };
+    const nextMessages = [...messages, userMessage];
+    setMessages([...nextMessages, optimisticAssistantMessage]);
     setDraft("");
 
     try {
@@ -118,6 +192,7 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
           context: {
             lastReferencedTaskId,
             pendingAction,
+            undoAction,
           },
         }),
       });
@@ -126,6 +201,11 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
         reply?: string;
         actionResults?: Array<{
           summary: string;
+          impact?: {
+            taskId: string;
+            taskTitle: string;
+            changedFields: string[];
+          };
           createdTaskCards?: Array<{
             taskId: string;
             title: string;
@@ -137,37 +217,40 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
         changedTaskIds?: string[];
         referencedTaskIds?: string[];
         pendingAction?: PendingAction | null;
+        undoAction?: UndoAction | null;
+        error?: string;
       };
+
+      if (!response.ok) {
+        throw new Error(payload.error || "助手请求失败，请稍后再试。");
+      }
 
       if (payload.referencedTaskIds && payload.referencedTaskIds.length > 0) {
         setLastReferencedTaskId(payload.referencedTaskIds[0] || null);
       }
       setPendingAction(payload.pendingAction ?? null);
+      setUndoAction(payload.undoAction ?? null);
 
-      setMessages((current) => [
-        ...current,
-        {
-          role: "assistant",
-          content: payload.reply || "这次没有拿到有效回复，你可以换个说法再试一次。",
-          actionSummaries: payload.actionResults?.map((item) => item.summary) ?? [],
-          createdTaskCards: payload.actionResults?.flatMap((item) => item.createdTaskCards ?? []) ?? [],
-          hasPendingAction: Boolean(payload.pendingAction),
-        },
-      ]);
+      finalizePendingMessage(pendingMessageId, {
+        id: generateMessageId("assistant"),
+        role: "assistant",
+        content: payload.reply || "这次没有拿到有效回复，你可以换个说法再试一次。",
+        actionSummaries: payload.actionResults?.map((item) => item.summary) ?? [],
+        actionImpacts: payload.actionResults?.map((item) => item.impact).filter((item): item is NonNullable<typeof item> => Boolean(item)) ?? [],
+        createdTaskCards: payload.actionResults?.flatMap((item) => item.createdTaskCards ?? []) ?? [],
+        hasPendingAction: Boolean(payload.pendingAction),
+        hasUndoAction: Boolean(payload.undoAction),
+      });
 
       if ((payload.changedTaskIds?.length ?? 0) > 0) {
-        startTransition(() => {
-          router.refresh();
-        });
+        setHasUnsyncedChanges(true);
       }
     } catch {
-      setMessages((current) => [
-        ...current,
-        {
-          role: "assistant",
-          content: "这次对话没有成功发出去。你可以稍后再试，或者换个更短的说法。",
-        },
-      ]);
+      finalizePendingMessage(pendingMessageId, {
+        id: generateMessageId("assistant"),
+        role: "assistant",
+        content: "这次对话没有成功发出去。你可以稍后再试，或者换个更短的说法。",
+      });
     } finally {
       setIsSending(false);
     }
@@ -206,6 +289,11 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
                 <p className="mt-1 text-xs leading-6 text-[var(--muted)]">
                   直接问任务、改状态、新增任务，或处理待确认与等待回看。
                 </p>
+                {hasUnsyncedChanges ? (
+                  <p className="mt-2 rounded-full bg-amber-100 px-3 py-1 text-[11px] text-amber-900">
+                    已执行任务变更，主页卡片会在你下次页面刷新后同步。
+                  </p>
+                ) : null}
               </div>
               <button
                 className="rounded-full border border-[rgba(71,53,31,0.08)] bg-white/88 px-3 py-1.5 text-xs text-[var(--muted)] transition hover:border-[var(--accent)] hover:text-[var(--text)]"
@@ -235,8 +323,8 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
 
             <div className="relative flex-1 overflow-hidden px-3 py-3 sm:px-4 sm:py-4">
               <div className="h-full space-y-4 overflow-y-auto pr-1" ref={messagesRef}>
-                {messages.map((message, index) => (
-                  <div className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`} key={`${message.role}-${index}`}>
+                {messages.map((message) => (
+                  <div className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`} key={message.id}>
                     <div className={`max-w-[94%] sm:max-w-[90%] ${message.role === "user" ? "" : "pr-2 sm:pr-6"}`}>
                       <div
                         className={`mb-1 flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] ${
@@ -266,7 +354,7 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
                             : "bg-white/94 text-[var(--text)] ring-1 ring-[rgba(71,53,31,0.08)] shadow-[0_10px_24px_rgba(90,67,35,0.05)]"
                         }`}
                       >
-                        <p>{message.content}</p>
+                        <p>{message.isPending ? `${message.content}（无整页刷新）` : message.content}</p>
                         {message.actionSummaries && message.actionSummaries.length > 0 ? (
                           <div className="mt-3 flex flex-wrap gap-2">
                             {message.actionSummaries.map((summary) => (
@@ -276,6 +364,19 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
                               >
                                 {summary}
                               </span>
+                            ))}
+                          </div>
+                        ) : null}
+                        {message.actionImpacts && message.actionImpacts.length > 0 ? (
+                          <div className="mt-3 space-y-2">
+                            {message.actionImpacts.map((impact) => (
+                              <div
+                                className="rounded-2xl bg-white/85 px-3 py-2 text-xs text-[var(--muted)] ring-1 ring-[rgba(71,53,31,0.08)]"
+                                key={`${impact.taskId}-${impact.taskTitle}`}
+                              >
+                                <p className="text-[var(--text)]">影响对象：{impact.taskTitle}</p>
+                                <p className="mt-1">变更字段：{impact.changedFields.join("、")}</p>
+                              </div>
                             ))}
                           </div>
                         ) : null}
@@ -332,26 +433,24 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
                             </button>
                           </div>
                         ) : null}
+                        {message.hasUndoAction ? (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <button
+                              className="rounded-full border border-[rgba(71,53,31,0.12)] bg-white px-3 py-1.5 text-xs text-[var(--muted)]"
+                              onClick={() => {
+                                void sendMessage("撤销上一步");
+                              }}
+                              type="button"
+                            >
+                              撤销上一步
+                            </button>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   </div>
                 ))}
 
-                {isSending ? (
-                  <div className="flex justify-start">
-                    <div className="max-w-[88%] pr-6">
-                      <div className="mb-1 flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-[var(--muted)]">
-                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[rgba(178,75,42,0.14)] text-[10px] font-semibold tracking-normal text-[var(--accent)]">
-                          AI
-                        </span>
-                        <span>任务助手</span>
-                      </div>
-                      <div className="rounded-[24px] bg-white/94 px-4 py-3 text-sm text-[var(--muted)] ring-1 ring-[rgba(71,53,31,0.08)] shadow-[0_10px_24px_rgba(90,67,35,0.05)]">
-                        正在读取任务并整理回复...
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
               </div>
             </div>
 
@@ -364,7 +463,7 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
             >
               <textarea
                 className="min-h-24 w-full rounded-[22px] border border-[rgba(71,53,31,0.1)] bg-white/92 px-4 py-3 text-sm leading-7 text-[var(--text)] outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--accent)] focus:shadow-[0_0_0_4px_rgba(178,75,42,0.08)]"
-                disabled={!databaseReady || isSending || isRefreshing}
+                disabled={!databaseReady || isSending}
                 onChange={(event) => setDraft(event.target.value)}
                 placeholder="例如：新增任务：明天下午三点去打印材料 / 把某条任务标记为进行中"
                 value={draft}
@@ -375,10 +474,10 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
                 </p>
                 <button
                   className="rounded-full bg-[linear-gradient(135deg,var(--accent),#c2643e)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_12px_22px_rgba(178,75,42,0.2)] transition hover:-translate-y-0.5 active:scale-[0.98] disabled:opacity-60"
-                  disabled={!databaseReady || isSending || isRefreshing || draft.trim().length === 0}
+                  disabled={!databaseReady || isSending || draft.trim().length === 0}
                   type="submit"
                 >
-                  {isSending ? "处理中..." : isRefreshing ? "刷新中..." : "发送给 AI"}
+                  {isSending ? "处理中..." : "发送给 AI"}
                 </button>
               </div>
             </form>
