@@ -8,6 +8,7 @@ import { getBlockingPredecessorTitles, isTaskBlockedByPredecessor } from "@/lib/
 import { describeWaitingReason } from "@/lib/waiting";
 
 export type DailyLogMode = "brief" | "full";
+type DailyLogSource = "saved" | "generated";
 
 type LogTask = Pick<
   Task,
@@ -36,6 +37,73 @@ type DailyTaskWithBlocking = LogTask & {
     } | null;
   }>;
 };
+
+type DailyLogSnapshot = {
+  dateKey: string;
+  mode: DailyLogMode;
+  text: string;
+  meta: {
+    actionCount: number;
+    touchedTaskCount: number;
+    riskCount: number;
+    waitingOrBlockedCount: number;
+  };
+  updatedAt: string;
+};
+
+let dailyLogTableReady = false;
+
+async function ensureDailyLogTable() {
+  if (dailyLogTableReady) {
+    return;
+  }
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS DailyLogSnapshot (
+      id TEXT PRIMARY KEY,
+      dateKey TEXT NOT NULL,
+      mode TEXT NOT NULL,
+      text TEXT NOT NULL,
+      metaJson TEXT NOT NULL DEFAULT '{}',
+      createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS DailyLogSnapshot_date_mode_unique
+    ON DailyLogSnapshot (dateKey, mode)
+  `);
+
+  dailyLogTableReady = true;
+}
+
+function normalizeMetaJson(value: unknown): DailyLogSnapshot["meta"] {
+  if (!value || typeof value !== "string") {
+    return {
+      actionCount: 0,
+      touchedTaskCount: 0,
+      riskCount: 0,
+      waitingOrBlockedCount: 0,
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(value) as Partial<DailyLogSnapshot["meta"]>;
+    return {
+      actionCount: Number(parsed.actionCount ?? 0),
+      touchedTaskCount: Number(parsed.touchedTaskCount ?? 0),
+      riskCount: Number(parsed.riskCount ?? 0),
+      waitingOrBlockedCount: Number(parsed.waitingOrBlockedCount ?? 0),
+    };
+  } catch {
+    return {
+      actionCount: 0,
+      touchedTaskCount: 0,
+      riskCount: 0,
+      waitingOrBlockedCount: 0,
+    };
+  }
+}
 
 function toDateRange(date: string) {
   const base = dayjs.tz(date, "YYYY-MM-DD", APP_TIMEZONE);
@@ -140,6 +208,68 @@ function buildEmptyLog(base: dayjs.Dayjs) {
       waitingOrBlockedCount: 0,
     },
   };
+}
+
+export async function getDailyLogSnapshot(input: { date: string; mode: DailyLogMode }) {
+  await ensureDailyLogTable();
+  const rows = (await prisma.$queryRawUnsafe(
+    `
+      SELECT dateKey, mode, text, metaJson, updatedAt
+      FROM DailyLogSnapshot
+      WHERE dateKey = ? AND mode = ?
+      LIMIT 1
+    `,
+    input.date,
+    input.mode,
+  )) as Array<{
+    dateKey: string;
+    mode: DailyLogMode;
+    text: string;
+    metaJson: string;
+    updatedAt: string;
+  }>;
+
+  const row = rows[0];
+  if (!row) {
+    return null;
+  }
+
+  return {
+    dateKey: row.dateKey,
+    mode: row.mode,
+    text: row.text,
+    meta: normalizeMetaJson(row.metaJson),
+    updatedAt: row.updatedAt,
+  } as DailyLogSnapshot;
+}
+
+export async function saveDailyLogSnapshot(input: {
+  date: string;
+  mode: DailyLogMode;
+  text: string;
+  meta: DailyLogSnapshot["meta"];
+}) {
+  await ensureDailyLogTable();
+  const nowIso = new Date().toISOString();
+  await prisma.$executeRawUnsafe(
+    `
+      INSERT INTO DailyLogSnapshot (id, dateKey, mode, text, metaJson, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(dateKey, mode) DO UPDATE SET
+        text = excluded.text,
+        metaJson = excluded.metaJson,
+        updatedAt = excluded.updatedAt
+    `,
+    `${input.date}:${input.mode}`,
+    input.date,
+    input.mode,
+    input.text,
+    JSON.stringify(input.meta),
+    nowIso,
+    nowIso,
+  );
+
+  return getDailyLogSnapshot({ date: input.date, mode: input.mode });
 }
 
 export async function generateDailyLog(input: { date: string; mode: DailyLogMode }) {
@@ -263,3 +393,28 @@ export async function generateDailyLog(input: { date: string; mode: DailyLogMode
   };
 }
 
+export async function getOrGenerateDailyLog(input: { date: string; mode: DailyLogMode; refresh?: boolean }) {
+  if (!input.refresh) {
+    const saved = await getDailyLogSnapshot({ date: input.date, mode: input.mode });
+    if (saved) {
+      return {
+        text: saved.text,
+        meta: saved.meta,
+        source: "saved" as DailyLogSource,
+      };
+    }
+  }
+
+  const generated = await generateDailyLog({ date: input.date, mode: input.mode });
+  await saveDailyLogSnapshot({
+    date: input.date,
+    mode: input.mode,
+    text: generated.text,
+    meta: generated.meta,
+  });
+
+  return {
+    ...generated,
+    source: "generated" as DailyLogSource,
+  };
+}
