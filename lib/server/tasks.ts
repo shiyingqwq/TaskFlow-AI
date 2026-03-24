@@ -2,6 +2,7 @@ import { promises as fs } from "fs";
 import path from "path";
 
 import { ActionType, DeliveryType, TaskStatus, TaskType } from "@/generated/prisma/enums";
+import type { Dependency, Source, Task, TaskProgressLog } from "@/generated/prisma/client";
 
 import { parseSourceIntoTasks, ParsedSourceInput, enrichTasksForCreation } from "@/lib/parser";
 import type { ExtractedTaskInput } from "@/lib/parser/schema";
@@ -132,6 +133,50 @@ function decorateTaskBlockingState<
   };
 }
 
+type DashboardTaskRecord = Task & {
+  source?: Source | null;
+  progressLogs?: TaskProgressLog[];
+  predecessorLinks?: Array<
+    Dependency & {
+      predecessorTask?: Pick<Task, "id" | "title" | "status"> | null;
+    }
+  >;
+  successorLinks?: Dependency[];
+};
+
+async function expandImpactedTaskIds(seedTaskIds: string[]) {
+  const visited = new Set(seedTaskIds.filter(Boolean));
+  if (visited.size === 0) {
+    return [];
+  }
+
+  let frontier = [...visited];
+  while (frontier.length > 0) {
+    const links = await prisma.dependency.findMany({
+      where: {
+        predecessorTaskId: {
+          in: frontier,
+        },
+      },
+      select: {
+        successorTaskId: true,
+      },
+    });
+
+    const nextFrontier: string[] = [];
+    for (const link of links) {
+      if (!visited.has(link.successorTaskId)) {
+        visited.add(link.successorTaskId);
+        nextFrontier.push(link.successorTaskId);
+      }
+    }
+
+    frontier = nextFrontier;
+  }
+
+  return [...visited];
+}
+
 export async function refreshDashboardFocusSummary() {
   const dashboard = await getDashboardData("all");
   const focusReviewTask = dashboard.reviewTasks[0] ?? null;
@@ -178,9 +223,24 @@ export async function refreshDashboardFocusSummary() {
   return summary;
 }
 
-export async function recalculateAllPriorities() {
+export async function recalculateAllPriorities(input?: { taskIds?: string[]; expandSuccessors?: boolean }) {
   await sanitizeTaskJsonColumns();
+  const requestedTaskIds = [...new Set((input?.taskIds ?? []).filter(Boolean))];
+  const shouldExpandSuccessors = input?.expandSuccessors ?? true;
+  const recalculateAll = requestedTaskIds.length === 0;
+  const scopedTaskIds = recalculateAll
+    ? []
+    : shouldExpandSuccessors
+      ? await expandImpactedTaskIds(requestedTaskIds)
+      : requestedTaskIds;
   const tasks = await prisma.task.findMany({
+    where: recalculateAll
+      ? undefined
+      : {
+          id: {
+            in: scopedTaskIds,
+          },
+        },
     include: {
       progressLogs: true,
       successorLinks: true,
@@ -192,51 +252,25 @@ export async function recalculateAllPriorities() {
     },
   });
 
-  await prisma.$transaction(
-    tasks.map((task) => {
-      const deadlineAudit = buildDeadlineAuditRecord({
-        deadline: task.deadline,
-        deadlineText: task.deadlineText,
-      });
-      const waiting = normalizeWaitingReasonInput({
-        waitingFor: task.waitingFor,
-        waitingReasonType: task.waitingReasonType,
-        waitingReasonText: task.waitingReasonText,
-        nextCheckAt: task.nextCheckAt,
-        dependsOnExternal: task.dependsOnExternal,
-      });
-      const review = buildReviewState({
-        taskType: task.taskType,
-        deliveryType: task.deliveryType,
-        deadline: task.deadline,
-        deadlineText: task.deadlineText,
-        submitTo: task.submitTo,
-        submitChannel: task.submitChannel,
-        requiresSignature: task.requiresSignature,
-        requiresStamp: task.requiresStamp,
-        materials: task.materials,
-        dependsOnExternal: task.dependsOnExternal,
-        waitingFor: waiting.waitingFor,
-        waitingReasonType: waiting.waitingReasonType,
-        waitingReasonText: waiting.waitingReasonText,
-        nextCheckAt: waiting.nextCheckAt,
-        confidence: task.confidence,
-        description: task.description,
-      });
-      const needsHumanReview = review.needsHumanReview && !task.reviewResolved;
-
-      const statusAfterReview = resolveStatusForPersistence(
-        {
-          status: task.status,
-          confidence: task.confidence,
+  if (tasks.length > 0) {
+    await prisma.$transaction(
+      tasks.map((task) => {
+        const deadlineAudit = buildDeadlineAuditRecord({
           deadline: task.deadline,
           deadlineText: task.deadlineText,
+        });
+        const waiting = normalizeWaitingReasonInput({
+          waitingFor: task.waitingFor,
+          waitingReasonType: task.waitingReasonType,
+          waitingReasonText: task.waitingReasonText,
+          nextCheckAt: task.nextCheckAt,
+          dependsOnExternal: task.dependsOnExternal,
+        });
+        const review = buildReviewState({
           taskType: task.taskType,
-          recurrenceType: task.recurrenceType,
-          recurrenceDays: task.recurrenceDays,
-          recurrenceTargetCount: task.recurrenceTargetCount,
-          recurrenceLimit: task.recurrenceLimit,
           deliveryType: task.deliveryType,
+          deadline: task.deadline,
+          deadlineText: task.deadlineText,
           submitTo: task.submitTo,
           submitChannel: task.submitChannel,
           requiresSignature: task.requiresSignature,
@@ -247,71 +281,99 @@ export async function recalculateAllPriorities() {
           waitingReasonType: waiting.waitingReasonType,
           waitingReasonText: waiting.waitingReasonText,
           nextCheckAt: waiting.nextCheckAt,
+          confidence: task.confidence,
           description: task.description,
-        },
-        needsHumanReview,
-      );
+        });
+        const needsHumanReview = review.needsHumanReview && !task.reviewResolved;
 
-      const calculated = calculatePriority({
-        id: task.id,
-        title: task.title,
-        status: statusAfterReview,
-        deadline: task.deadline,
-        taskType: task.taskType,
-        recurrenceType: task.recurrenceType,
-        recurrenceDays: task.recurrenceDays,
-        recurrenceTargetCount: task.recurrenceTargetCount,
-        recurrenceLimit: task.recurrenceLimit,
-        progressLogs: task.progressLogs,
-        deliveryType: task.deliveryType,
-        requiresSignature: task.requiresSignature,
-        requiresStamp: task.requiresStamp,
-        dependsOnExternal: task.dependsOnExternal,
-        waitingFor: waiting.waitingFor,
-        waitingReasonType: waiting.waitingReasonType,
-        waitingReasonText: waiting.waitingReasonText,
-        nextCheckAt: waiting.nextCheckAt,
-        nextActionSuggestion: task.nextActionSuggestion,
-        successorCount: task.successorLinks.length,
-        blockingPredecessorTitles: getBlockingPredecessorTitles(task),
-      });
-
-      const nextStatus = needsHumanReview
-        ? statusAfterReview
-        : resolveRecalculatedStatus(
-            {
-              status: statusAfterReview,
-              confidence: task.confidence,
-              deadline: task.deadline,
-              deadlineText: task.deadlineText,
-              taskType: task.taskType,
-              deliveryType: task.deliveryType,
-              dependsOnExternal: task.dependsOnExternal,
-              waitingFor: waiting.waitingFor,
-              waitingReasonType: waiting.waitingReasonType,
-              waitingReasonText: waiting.waitingReasonText,
-              nextCheckAt: waiting.nextCheckAt,
-            },
-            calculated.suggestedStatus,
-          );
-
-      return prisma.task.update({
-        where: { id: task.id },
-        data: {
-          priorityScore: calculated.priorityScore,
-          priorityReason: calculated.priorityReason,
+        const statusAfterReview = resolveStatusForPersistence(
+          {
+            status: task.status,
+            confidence: task.confidence,
+            deadline: task.deadline,
+            deadlineText: task.deadlineText,
+            taskType: task.taskType,
+            recurrenceType: task.recurrenceType,
+            recurrenceDays: task.recurrenceDays,
+            recurrenceTargetCount: task.recurrenceTargetCount,
+            recurrenceLimit: task.recurrenceLimit,
+            deliveryType: task.deliveryType,
+            submitTo: task.submitTo,
+            submitChannel: task.submitChannel,
+            requiresSignature: task.requiresSignature,
+            requiresStamp: task.requiresStamp,
+            materials: task.materials,
+            dependsOnExternal: task.dependsOnExternal,
+            waitingFor: waiting.waitingFor,
+            waitingReasonType: waiting.waitingReasonType,
+            waitingReasonText: waiting.waitingReasonText,
+            nextCheckAt: waiting.nextCheckAt,
+            description: task.description,
+          },
           needsHumanReview,
-          reviewReasons: review.reviewReasons,
+        );
+
+        const calculated = calculatePriority({
+          id: task.id,
+          title: task.title,
+          status: statusAfterReview,
+          deadline: task.deadline,
+          taskType: task.taskType,
+          recurrenceType: task.recurrenceType,
+          recurrenceDays: task.recurrenceDays,
+          recurrenceTargetCount: task.recurrenceTargetCount,
+          recurrenceLimit: task.recurrenceLimit,
+          progressLogs: task.progressLogs,
+          deliveryType: task.deliveryType,
+          requiresSignature: task.requiresSignature,
+          requiresStamp: task.requiresStamp,
+          dependsOnExternal: task.dependsOnExternal,
           waitingFor: waiting.waitingFor,
           waitingReasonType: waiting.waitingReasonType,
           waitingReasonText: waiting.waitingReasonText,
           nextCheckAt: waiting.nextCheckAt,
-          ...deadlineAudit,
-          status: nextStatus,
-        },
-      });
-    }),
-  );
+          nextActionSuggestion: task.nextActionSuggestion,
+          successorCount: task.successorLinks.length,
+          blockingPredecessorTitles: getBlockingPredecessorTitles(task),
+        });
+
+        const nextStatus = needsHumanReview
+          ? statusAfterReview
+          : resolveRecalculatedStatus(
+              {
+                status: statusAfterReview,
+                confidence: task.confidence,
+                deadline: task.deadline,
+                deadlineText: task.deadlineText,
+                taskType: task.taskType,
+                deliveryType: task.deliveryType,
+                dependsOnExternal: task.dependsOnExternal,
+                waitingFor: waiting.waitingFor,
+                waitingReasonType: waiting.waitingReasonType,
+                waitingReasonText: waiting.waitingReasonText,
+                nextCheckAt: waiting.nextCheckAt,
+              },
+              calculated.suggestedStatus,
+            );
+
+        return prisma.task.update({
+          where: { id: task.id },
+          data: {
+            priorityScore: calculated.priorityScore,
+            priorityReason: calculated.priorityReason,
+            needsHumanReview,
+            reviewReasons: review.reviewReasons,
+            waitingFor: waiting.waitingFor,
+            waitingReasonType: waiting.waitingReasonType,
+            waitingReasonText: waiting.waitingReasonText,
+            nextCheckAt: waiting.nextCheckAt,
+            ...deadlineAudit,
+            status: nextStatus,
+          },
+        });
+      }),
+    );
+  }
 
   await refreshDashboardFocusSummary();
 }
@@ -964,7 +1026,7 @@ export async function updateTaskCore(taskId: string, data: TaskCoreUpdateInput) 
     },
   });
 
-  await recalculateAllPriorities();
+  await recalculateAllPriorities({ taskIds: [taskId] });
   return task;
 }
 
@@ -1015,7 +1077,7 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus, note?
     },
   });
 
-  await recalculateAllPriorities();
+  await recalculateAllPriorities({ taskIds: [taskId] });
   return task;
 }
 
@@ -1032,11 +1094,37 @@ export async function deleteTask(taskId: string) {
     throw new Error(`Task ${taskId} not found`);
   }
 
+  const relatedDependencies = await prisma.dependency.findMany({
+    where: {
+      OR: [{ predecessorTaskId: taskId }, { successorTaskId: taskId }],
+    },
+    select: {
+      predecessorTaskId: true,
+      successorTaskId: true,
+    },
+  });
+  const predecessorIds = [
+    ...new Set(relatedDependencies.filter((item) => item.successorTaskId === taskId).map((item) => item.predecessorTaskId)),
+  ];
+  const directSuccessorIds = [
+    ...new Set(relatedDependencies.filter((item) => item.predecessorTaskId === taskId).map((item) => item.successorTaskId)),
+  ];
+
   await prisma.task.delete({
     where: { id: taskId },
   });
 
-  await recalculateAllPriorities();
+  const impactedSuccessorIds = directSuccessorIds.length > 0 ? await expandImpactedTaskIds(directSuccessorIds) : [];
+  const impactedTaskIds = [...new Set([...predecessorIds, ...impactedSuccessorIds])];
+
+  if (impactedTaskIds.length > 0) {
+    await recalculateAllPriorities({
+      taskIds: impactedTaskIds,
+      expandSuccessors: false,
+    });
+  } else {
+    await refreshDashboardFocusSummary();
+  }
 
   return existing;
 }
@@ -1069,12 +1157,57 @@ export async function deleteSource(sourceId: string) {
     throw new Error(`Source ${sourceId} not found`);
   }
 
+  const sourceTasks = await prisma.task.findMany({
+    where: { sourceId },
+    select: { id: true },
+  });
+  const deletedTaskIds = sourceTasks.map((task) => task.id);
+  const deletedTaskIdSet = new Set(deletedTaskIds);
+
+  const relatedDependencies =
+    deletedTaskIds.length > 0
+      ? await prisma.dependency.findMany({
+          where: {
+            OR: [{ predecessorTaskId: { in: deletedTaskIds } }, { successorTaskId: { in: deletedTaskIds } }],
+          },
+          select: {
+            predecessorTaskId: true,
+            successorTaskId: true,
+          },
+        })
+      : [];
+  const predecessorIds = [
+    ...new Set(
+      relatedDependencies
+        .filter((item) => deletedTaskIdSet.has(item.successorTaskId) && !deletedTaskIdSet.has(item.predecessorTaskId))
+        .map((item) => item.predecessorTaskId),
+    ),
+  ];
+  const directSuccessorIds = [
+    ...new Set(
+      relatedDependencies
+        .filter((item) => deletedTaskIdSet.has(item.predecessorTaskId) && !deletedTaskIdSet.has(item.successorTaskId))
+        .map((item) => item.successorTaskId),
+    ),
+  ];
+
   await prisma.source.delete({
     where: { id: sourceId },
   });
 
   await removeUploadedSourceFile(existing.filePath);
-  await recalculateAllPriorities();
+
+  const impactedSuccessorIds = directSuccessorIds.length > 0 ? await expandImpactedTaskIds(directSuccessorIds) : [];
+  const impactedTaskIds = [...new Set([...predecessorIds, ...impactedSuccessorIds])];
+
+  if (impactedTaskIds.length > 0) {
+    await recalculateAllPriorities({
+      taskIds: impactedTaskIds,
+      expandSuccessors: false,
+    });
+  } else {
+    await refreshDashboardFocusSummary();
+  }
 
   return existing;
 }
@@ -1102,7 +1235,7 @@ export async function recordTaskProgress(taskId: string) {
     },
   });
 
-  await recalculateAllPriorities();
+  await recalculateAllPriorities({ taskIds: [taskId] });
   return prisma.task.findUnique({
     where: { id: taskId },
     include: {
@@ -1144,7 +1277,7 @@ export async function undoTaskProgress(taskId: string) {
     },
   });
 
-  await recalculateAllPriorities();
+  await recalculateAllPriorities({ taskIds: [taskId] });
   return prisma.task.findUnique({
     where: { id: taskId },
     include: {
@@ -1190,7 +1323,7 @@ export async function resetTaskProgressCycle(taskId: string) {
     },
   });
 
-  await recalculateAllPriorities();
+  await recalculateAllPriorities({ taskIds: [taskId] });
   return prisma.task.findUnique({
     where: { id: taskId },
     include: {
@@ -1228,7 +1361,7 @@ export async function scheduleTaskFollowUp(taskId: string, preset: WaitingFollow
     },
   });
 
-  await recalculateAllPriorities();
+  await recalculateAllPriorities({ taskIds: [taskId] });
   return task;
 }
 
@@ -1275,7 +1408,7 @@ export async function resolveTaskReview(taskId: string, note?: string) {
     },
   });
 
-  await recalculateAllPriorities();
+  await recalculateAllPriorities({ taskIds: [taskId] });
   return task;
 }
 
@@ -1320,7 +1453,7 @@ export async function restoreTaskAssistantSnapshot(input: {
     },
   });
 
-  await recalculateAllPriorities();
+  await recalculateAllPriorities({ taskIds: [input.taskId] });
   return restored;
 }
 
@@ -1356,7 +1489,7 @@ export async function restoreTaskProgressLogs(taskId: string, completedAts: Arra
     });
   });
 
-  await recalculateAllPriorities();
+  await recalculateAllPriorities({ taskIds: [taskId] });
 
   return prisma.task.findUnique({
     where: { id: taskId },
@@ -1368,25 +1501,60 @@ export async function restoreTaskProgressLogs(taskId: string, completedAts: Arra
   });
 }
 
-export async function getDashboardData(filter = "all") {
+type DashboardDataSection = "all" | "overview" | "today" | "courses" | "tasks" | "sources" | "settings";
+
+export async function getDashboardData(filter = "all", options?: { section?: DashboardDataSection }) {
   try {
     await sanitizeTaskJsonColumns();
+    const section = options?.section ?? "all";
+    const needsTaskData = ["all", "overview", "today", "tasks", "settings"].includes(section);
+    const needsRichTaskData = ["all", "tasks"].includes(section);
+    const needsBlockingContext = ["all", "overview", "today"].includes(section);
+    const needsRecentSources = ["all", "sources"].includes(section);
+
     const settings = await readAppSettingsRecord();
-    const rawTasks = await prisma.task.findMany({
-      include: {
-        progressLogs: {
-          orderBy: { completedAt: "desc" },
-        },
-        source: true,
-        successorLinks: true,
-        predecessorLinks: {
+    let rawTasks: DashboardTaskRecord[] = [];
+    if (needsTaskData) {
+      if (needsRichTaskData) {
+        rawTasks = await prisma.task.findMany({
           include: {
-            predecessorTask: true,
+            progressLogs: {
+              orderBy: { completedAt: "desc" },
+            },
+            source: true,
+            successorLinks: true,
+            predecessorLinks: {
+              include: {
+                predecessorTask: true,
+              },
+            },
           },
-        },
-      },
-      orderBy: [{ priorityScore: "desc" }, { updatedAt: "desc" }],
-    });
+          orderBy: [{ priorityScore: "desc" }, { updatedAt: "desc" }],
+        });
+      } else if (needsBlockingContext) {
+        rawTasks = await prisma.task.findMany({
+          include: {
+            predecessorLinks: {
+              include: {
+                predecessorTask: {
+                  select: {
+                    id: true,
+                    title: true,
+                    status: true,
+                  },
+                },
+              },
+            },
+          },
+          orderBy: [{ priorityScore: "desc" }, { updatedAt: "desc" }],
+        });
+      } else {
+        rawTasks = await prisma.task.findMany({
+          orderBy: [{ priorityScore: "desc" }, { updatedAt: "desc" }],
+        });
+      }
+    }
+
     const tasks = rawTasks.map((task) => decorateTaskBlockingState(task));
     const activeIdentities = normalizeActiveIdentities(
       Array.isArray(settings.activeIdentities) && settings.activeIdentities.length > 0 ? settings.activeIdentities : settings.activeIdentity ? [settings.activeIdentity] : [],
@@ -1394,13 +1562,15 @@ export async function getDashboardData(filter = "all") {
     const matchedIdentityTasks = tasks.filter((task) => matchesActiveIdentities(task, activeIdentities));
     const unmatchedIdentityTasks = tasks.filter((task) => !matchesActiveIdentities(task, activeIdentities));
 
-    const recentSources = await prisma.source.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 6,
-      include: {
-        tasks: true,
-      },
-    });
+    const recentSources = needsRecentSources
+      ? await prisma.source.findMany({
+          orderBy: { createdAt: "desc" },
+          take: 6,
+          include: {
+            tasks: true,
+          },
+        })
+      : [];
 
     const reviewTasks = [...matchedIdentityTasks.filter((task) => task.needsHumanReview), ...unmatchedIdentityTasks.filter((task) => task.needsHumanReview)];
     const blockedTasks = [

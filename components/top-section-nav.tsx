@@ -15,10 +15,12 @@ export function TopSectionNav({
   activeSection,
   filter = "all",
   importActive = false,
+  logsActive = false,
 }: {
   activeSection?: SectionValue;
   filter?: string;
   importActive?: boolean;
+  logsActive?: boolean;
 }) {
   const buildSectionHref = (nextSection: SectionValue) => ({
     pathname: "/",
@@ -46,16 +48,28 @@ export function TopSectionNav({
             </Link>
           ))}
         </div>
-        <Link
-          className={`shrink-0 rounded-full border px-4 py-2 text-sm ${
-            importActive
-              ? "border-[var(--accent)] bg-[var(--accent)] text-white"
-              : "border-[var(--line)] bg-white text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)]"
-          }`}
-          href="/import"
-        >
-          导入通知
-        </Link>
+        <div className="flex shrink-0 items-center gap-2">
+          <Link
+            className={`rounded-full border px-4 py-2 text-sm ${
+              logsActive
+                ? "border-[var(--accent)] bg-[var(--accent)] text-white"
+                : "border-[var(--line)] bg-white text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)]"
+            }`}
+            href="/logs"
+          >
+            工作日志
+          </Link>
+          <Link
+            className={`rounded-full border px-4 py-2 text-sm ${
+              importActive
+                ? "border-[var(--accent)] bg-[var(--accent)] text-white"
+                : "border-[var(--line)] bg-white text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)]"
+            }`}
+            href="/import"
+          >
+            导入通知
+          </Link>
+        </div>
       </div>
     </section>
   );

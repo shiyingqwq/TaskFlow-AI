@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "predev": "npm run prisma:prepare && prisma generate && prisma db push",
     "build": "next build",
     "prebuild": "npm run prisma:prepare && prisma generate && prisma db push",
     "start": "next start",
     "db:push": "npm run prisma:prepare && prisma db push",
+    "db:sync": "npm run prisma:prepare && prisma generate && prisma db push",
     "prisma:prepare": "node scripts/prepare-prisma-engines.mjs",
     "seed": "tsx prisma/seed.ts",
     "setup": "npm run prisma:prepare && prisma generate && prisma db push",

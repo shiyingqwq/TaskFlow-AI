@@ -31,7 +31,10 @@ export default async function DashboardPage({
 }) {
   const resolvedSearchParams = await searchParams;
   const filter = resolvedSearchParams?.filter ?? "all";
-  const section = resolvedSearchParams?.section ?? "overview";
+  const sectionInput = resolvedSearchParams?.section ?? "overview";
+  const section = ["overview", "today", "courses", "tasks", "sources", "settings"].includes(sectionInput)
+    ? (sectionInput as "overview" | "today" | "courses" | "tasks" | "sources" | "settings")
+    : "overview";
   const {
     tasks,
     currentBestTask,
@@ -51,16 +54,19 @@ export default async function DashboardPage({
     matchedIdentityTasks,
     blockedTasks,
   } =
-    await getDashboardData(filter);
-  const focusReviewTask = reviewTasks[0] ?? null;
-  const focusWaitingTask = dueWaitingTasks[0] ?? null;
-  const focusBlockedTask = blockedTasks[0] ?? null;
+    await getDashboardData(filter, { section });
+  const shouldRenderOverview = section === "overview";
+  const focusReviewTask = shouldRenderOverview ? reviewTasks[0] ?? null : null;
+  const focusWaitingTask = shouldRenderOverview ? dueWaitingTasks[0] ?? null : null;
+  const focusBlockedTask = shouldRenderOverview ? blockedTasks[0] ?? null : null;
   const focusBlockedPredecessor =
-    focusBlockedTask?.predecessorLinks.find(
+    focusBlockedTask?.predecessorLinks?.find(
       (item) => item.predecessorTask && !["done", "submitted", "ignored"].includes(item.predecessorTask.status),
     )?.predecessorTask ?? null;
 
-  const focusMode = currentBestTask
+  const focusMode = !shouldRenderOverview
+    ? "empty"
+    : currentBestTask
     ? "task"
     : focusReviewTask
       ? "review"
@@ -78,21 +84,23 @@ export default async function DashboardPage({
   const courseSchedule = normalizeCourseSchedule(settings.courseSchedule);
   const courseTableConfig = normalizeCourseTableConfig(settings.courseTableConfig);
   const focusSummaryText =
-    settings.focusSummaryText ||
-    buildFocusSummaryFallback({
-      databaseReady,
-      focusMode,
-      totalTaskCount: tasks.length,
-      reviewCount: reviewTasks.length,
-      dueWaitingCount: dueWaitingTasks.length,
-      blockedCount: blockedTasks.length,
-      topTaskTitles: topTasksForToday.map((task) => task.title),
-      currentBestTask,
-      focusReviewTask,
-      focusWaitingTask,
-      focusBlockedTask,
-      tasks,
-    });
+    shouldRenderOverview
+      ? settings.focusSummaryText ||
+        buildFocusSummaryFallback({
+          databaseReady,
+          focusMode,
+          totalTaskCount: tasks.length,
+          reviewCount: reviewTasks.length,
+          dueWaitingCount: dueWaitingTasks.length,
+          blockedCount: blockedTasks.length,
+          topTaskTitles: topTasksForToday.map((task) => task.title),
+          currentBestTask,
+          focusReviewTask,
+          focusWaitingTask,
+          focusBlockedTask,
+          tasks,
+        })
+      : "";
   const todayLabel = nowInTaipei().format("M月D日 dddd");
 
   return (
@@ -371,7 +379,7 @@ export default async function DashboardPage({
               <div className="mt-4 grid gap-4 lg:grid-cols-2">
                 {blockedTasks.slice(0, 4).map((task) => {
                   const firstBlockingPredecessor =
-                    task.predecessorLinks.find(
+                    task.predecessorLinks?.find(
                       (item) =>
                         item.predecessorTask &&
                         !["done", "submitted", "ignored"].includes(item.predecessorTask.status),

@@ -39,21 +39,25 @@ describe("task review rules", () => {
   });
 
   it("keeps low-risk issues out of the blocking queue", () => {
-    const result = buildReviewState({
-      taskType: "submission",
-      deliveryType: "electronic",
-      deadline: "2026-03-20T10:00:00.000Z",
-      deadlineText: "3月20日",
-      submitTo: null,
-      submitChannel: "线上",
-      requiresSignature: false,
-      requiresStamp: false,
-      materials: [],
-      dependsOnExternal: false,
-      waitingFor: null,
-      confidence: 0.6,
-      description: "",
-    });
+    const base = dayjs.tz("2026-03-18 10:00", "YYYY-MM-DD HH:mm", "Asia/Taipei");
+    const result = buildReviewState(
+      {
+        taskType: "submission",
+        deliveryType: "electronic",
+        deadline: "2026-03-20T10:00:00.000Z",
+        deadlineText: "3月20日",
+        submitTo: null,
+        submitChannel: "线上",
+        requiresSignature: false,
+        requiresStamp: false,
+        materials: [],
+        dependsOnExternal: false,
+        waitingFor: null,
+        confidence: 0.6,
+        description: "",
+      },
+      base,
+    );
 
     expect(result.needsHumanReview).toBe(false);
     expect(result.highRiskItems).toHaveLength(0);

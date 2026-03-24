@@ -127,6 +127,7 @@ async function patchTaskStatus(taskId: string, status: (typeof quickStatuses)[nu
 }
 
 export function QuickStatusActions({ taskId, compact = false }: { taskId: string; compact?: boolean }) {
+  const router = useRouter();
   const [isPending, setIsPending] = useState(false);
   const [pendingLabel, setPendingLabel] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -140,6 +141,7 @@ export function QuickStatusActions({ taskId, compact = false }: { taskId: string
     try {
       const nextStatus = await patchTaskStatus(taskId, status);
       setFeedback(`已更新为${actionStatusLabels[nextStatus]}`);
+      router.refresh();
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : "状态更新失败，请重试。");
     } finally {
@@ -177,6 +179,7 @@ export function TaskStatusShortcutActions({
   status: string;
   compact?: boolean;
 }) {
+  const router = useRouter();
   const [isPending, setIsPending] = useState(false);
   const [pendingLabel, setPendingLabel] = useState<string | null>(null);
   const [optimisticStatus, setOptimisticStatus] = useState(status);
@@ -198,6 +201,7 @@ export function TaskStatusShortcutActions({
       const committedStatus = await patchTaskStatus(taskId, nextStatus);
       setOptimisticStatus(committedStatus);
       setFeedback(`已更新为${actionStatusLabels[committedStatus]}`);
+      router.refresh();
     } catch (error) {
       setOptimisticStatus(previousStatus);
       setErrorText(error instanceof Error ? error.message : "状态更新失败，请重试。");
@@ -250,6 +254,7 @@ export function ReviewQuickActions({ taskId, compact = false }: { taskId: string
         body: JSON.stringify({}),
       });
       setFeedback(payload.needsHumanReview ? "已记录，本任务仍需继续确认。" : `已放行，状态更新为${actionStatusLabels[payload.status]}`);
+      router.refresh();
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : "确认失败，请重试。");
     } finally {
@@ -269,6 +274,7 @@ export function ReviewQuickActions({ taskId, compact = false }: { taskId: string
     try {
       await patchTaskStatus(taskId, "ignored", "用户标记为非任务");
       setFeedback("已标记为非任务。");
+      router.refresh();
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : "操作失败，请重试。");
     } finally {
@@ -331,6 +337,7 @@ const reminderPresets = [
 ] as const;
 
 export function WaitingFollowUpActions({ taskId, compact = false }: { taskId: string; compact?: boolean }) {
+  const router = useRouter();
   const [isPending, setIsPending] = useState(false);
   const [pendingLabel, setPendingLabel] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -349,6 +356,7 @@ export function WaitingFollowUpActions({ taskId, compact = false }: { taskId: st
         body: JSON.stringify({ preset }),
       });
       setFeedback(payload.nextCheckAt ? "已安排回看时间。" : `已更新为${actionStatusLabels[payload.status]}`);
+      router.refresh();
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : "安排失败，请重试。");
     } finally {
@@ -378,6 +386,7 @@ export function WaitingFollowUpActions({ taskId, compact = false }: { taskId: st
 }
 
 export function TaskReminderActions({ taskId, compact = false }: { taskId: string; compact?: boolean }) {
+  const router = useRouter();
   const [isPending, setIsPending] = useState(false);
   const [pendingLabel, setPendingLabel] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -396,6 +405,7 @@ export function TaskReminderActions({ taskId, compact = false }: { taskId: strin
         body: JSON.stringify({ preset }),
       });
       setFeedback("提醒时间已更新。");
+      router.refresh();
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : "提醒更新失败，请重试。");
     } finally {

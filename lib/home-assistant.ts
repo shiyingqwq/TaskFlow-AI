@@ -935,7 +935,7 @@ async function executeAction(action: AssistantPlannedAction, taskMap: Map<string
   }
 
   if (action.mode === "increment") {
-    const completedAts = task.progressLogs.map((log) => new Date(log.completedAt).toISOString());
+    const completedAts = (task.progressLogs ?? []).map((log) => new Date(log.completedAt).toISOString());
     await recordTaskProgress(action.taskId);
     return {
       taskIds: [task.id],
@@ -948,7 +948,7 @@ async function executeAction(action: AssistantPlannedAction, taskMap: Map<string
   }
 
   if (action.mode === "decrement") {
-    const completedAts = task.progressLogs.map((log) => new Date(log.completedAt).toISOString());
+    const completedAts = (task.progressLogs ?? []).map((log) => new Date(log.completedAt).toISOString());
     await undoTaskProgress(action.taskId);
     return {
       taskIds: [task.id],
@@ -960,7 +960,7 @@ async function executeAction(action: AssistantPlannedAction, taskMap: Map<string
     };
   }
 
-  const completedAts = task.progressLogs.map((log) => new Date(log.completedAt).toISOString());
+  const completedAts = (task.progressLogs ?? []).map((log) => new Date(log.completedAt).toISOString());
   await resetTaskProgressCycle(action.taskId);
   return {
     taskIds: [task.id],

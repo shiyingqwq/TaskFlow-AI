@@ -64,7 +64,14 @@ npm run dev
 默认访问 `http://localhost:3000`。
 
 说明：
-`npm run setup`、`npm run dev` 和 `npm run build` 都会先执行一个轻量的 Prisma 引擎准备脚本，处理当前环境里偶发的 `schema-engine` 下载失败问题。
+`npm run dev` 不再自动执行 Prisma 同步，以加快日常启动速度。  
+当你修改了 `prisma/schema.prisma` 后，再手动执行：
+
+```bash
+npm run db:sync
+```
+
+`npm run setup`、`npm run db:sync` 和 `npm run build` 会先执行一个轻量的 Prisma 引擎准备脚本，处理当前环境里偶发的 `schema-engine` 下载失败问题。
 
 ## AI Provider 配置
 
@@ -117,6 +124,37 @@ curl -X POST http://localhost:3000/api/notify/dingtalk \
 
 返回 `{"ok":true,...}` 代表发送成功。
 
+## 自动提醒（每日摘要 + 截止前 + 等待回看）
+
+你现在可以通过一个定时接口，自动推送三类提醒到钉钉：
+
+- 每日摘要（默认每天 `08:30` 后仅发一次）
+- 截止前提醒（按 `24h / 3h / 1h` 分层提醒）
+- 等待任务到 `nextCheckAt` 的回看提醒
+
+可选环境变量：
+
+```env
+REMINDER_DAILY_TIME="08:30"
+REMINDER_RUN_TOKEN="your-secret-token"
+```
+
+触发接口（建议给定时任务调用）：
+
+```bash
+curl -X POST http://localhost:3000/api/reminders/run \
+  -H "Content-Type: application/json" \
+  -H "x-reminder-token: your-secret-token" \
+  -d '{"dryRun":false}'
+```
+
+只预览不发送（dry run）：
+
+```bash
+curl "http://localhost:3000/api/reminders/run?dryRun=1" \
+  -H "x-reminder-token: your-secret-token"
+```
+
 ## 两种运行模式
 
 ### 1. 有 `AI_API_KEY` 或 `OPENAI_API_KEY`
@@ -141,6 +179,8 @@ curl -X POST http://localhost:3000/api/notify/dingtalk \
   任务详情页。展示截止时间、提交要求、签字盖章、优先级解释、证据片段、依赖、状态流转、编辑表单。
 - `/sources/[id]`
   来源详情页。展示原始文本/图片、解析摘要和关联任务。
+- `/logs`
+  工作日志页。按日期生成可复制的“某日日志”，支持简版/详版与手动微调。
 
 ## 主要文件结构
 
