@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { handleHomeAssistantMessage } from "@/lib/home-assistant";
 
-const pendingActionSchema = z.union([
+const plannedActionSchema = z.union([
   z.object({
     type: z.literal("update_status"),
     taskId: z.string(),
@@ -32,6 +32,54 @@ const pendingActionSchema = z.union([
   }),
 ]);
 
+const pendingActionSchema = z.object({
+  type: z.literal("confirm_actions"),
+  actions: z.array(plannedActionSchema),
+  previewText: z.string(),
+  impacts: z.array(
+    z.object({
+      taskId: z.string(),
+      taskTitle: z.string(),
+      changedFields: z.array(z.string()),
+    }),
+  ),
+});
+
+const undoActionSchema = z.object({
+  type: z.literal("undo_actions"),
+  actions: z.array(
+    z.union([
+      z.object({
+        type: z.literal("restore_task_snapshot"),
+        snapshot: z.object({
+          taskId: z.string(),
+          taskTitle: z.string(),
+          status: z.enum(["needs_review", "ready", "waiting", "in_progress", "pending_submit", "submitted", "done", "overdue", "ignored"]),
+          needsHumanReview: z.boolean(),
+          reviewResolved: z.boolean(),
+          reviewReasons: z.array(z.string()),
+          waitingFor: z.string().nullable(),
+          waitingReasonType: z.string().nullable(),
+          waitingReasonText: z.string().nullable(),
+          nextCheckAt: z.string().nullable(),
+        }),
+      }),
+      z.object({
+        type: z.literal("restore_progress_logs"),
+        taskId: z.string(),
+        taskTitle: z.string(),
+        completedAts: z.array(z.string()),
+      }),
+      z.object({
+        type: z.literal("delete_source"),
+        sourceId: z.string(),
+        sourceLabel: z.string(),
+      }),
+    ]),
+  ),
+  summary: z.string().optional(),
+});
+
 const historyItemSchema = z.object({
   role: z.enum(["user", "assistant"]),
   content: z.string(),
@@ -44,6 +92,7 @@ const requestSchema = z.object({
     .object({
       lastReferencedTaskId: z.string().nullable().optional(),
       pendingAction: pendingActionSchema.nullable().optional(),
+      undoAction: undoActionSchema.nullable().optional(),
     })
     .optional(),
 });

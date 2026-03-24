@@ -20,6 +20,9 @@ import { CourseScheduleSettingCard } from "@/components/course-schedule-setting-
 import { normalizeCourseSchedule, normalizeCourseTableConfig } from "@/lib/course-schedule";
 import { TodayCoursesPanel } from "@/components/today-courses-panel";
 import { CourseWeekTable } from "@/components/course-week-table";
+import { SystemReadyCard } from "@/components/system-ready-card";
+import { resolveAiRuntimeConfigFromSources } from "@/lib/server/app-settings";
+import { SystemReadyBanner } from "@/components/system-ready-banner";
 
 export default async function DashboardPage({
   searchParams,
@@ -67,6 +70,11 @@ export default async function DashboardPage({
           ? "blocked"
           : "empty";
   const settings = await getAppSettings();
+  const aiRuntime = resolveAiRuntimeConfigFromSources(settings);
+  const aiReady = Boolean(aiRuntime);
+  const visionReady = Boolean(aiRuntime?.supportsVision);
+  const identityReady = activeIdentities.length > 0;
+  const unresolvedCount = [databaseReady, aiReady, visionReady, identityReady].filter((item) => !item).length;
   const courseSchedule = normalizeCourseSchedule(settings.courseSchedule);
   const courseTableConfig = normalizeCourseTableConfig(settings.courseTableConfig);
   const focusSummaryText =
@@ -90,6 +98,7 @@ export default async function DashboardPage({
   return (
     <main className="space-y-6 pb-10">
       <TopSectionNav activeSection={section as "overview" | "today" | "courses" | "tasks" | "sources" | "settings"} filter={filter} />
+      {section !== "settings" ? <SystemReadyBanner unresolvedCount={unresolvedCount} /> : null}
 
       {section === "overview" ? (
         <>
@@ -701,22 +710,25 @@ export default async function DashboardPage({
       ) : null}
 
       {section === "settings" ? (
-        <section className="grid gap-4 xl:grid-cols-2">
-          <IdentitySettingCard initialIdentities={activeIdentities} matchedCount={matchedIdentityTasks.length} />
-          <AiSettingsCard
-            initialApiKey={settings.aiApiKey ?? ""}
-            initialBaseUrl={settings.aiBaseUrl ?? ""}
-            initialModel={settings.aiModel ?? ""}
-            initialSupportsVision={settings.aiSupportsVision}
-            initialVisionModel={settings.aiVisionModel ?? ""}
-          />
-          <CourseScheduleSettingCard initialCourses={courseSchedule} initialTableConfig={courseTableConfig} />
-          <section className="rounded-[28px] border border-[var(--line)] bg-[var(--panel)] p-5">
-            <h3 className="text-xl font-semibold">课表预览</h3>
-            <p className="mt-2 text-sm text-[var(--muted)]">保存课表后，可去“课表”分栏查看周视图网格。</p>
-            <Link className="mt-4 inline-flex rounded-full border border-[var(--line)] bg-white px-4 py-2 text-sm text-[var(--muted)] hover:text-[var(--accent)]" href="/?section=courses">
-              去看周课表
-            </Link>
+        <section className="space-y-4">
+          <SystemReadyCard aiReady={aiReady} databaseReady={databaseReady} identityReady={identityReady} visionReady={visionReady} />
+          <section className="grid gap-4 xl:grid-cols-2">
+            <IdentitySettingCard initialIdentities={activeIdentities} matchedCount={matchedIdentityTasks.length} />
+            <AiSettingsCard
+              initialApiKey={settings.aiApiKey ?? ""}
+              initialBaseUrl={settings.aiBaseUrl ?? ""}
+              initialModel={settings.aiModel ?? ""}
+              initialSupportsVision={settings.aiSupportsVision}
+              initialVisionModel={settings.aiVisionModel ?? ""}
+            />
+            <CourseScheduleSettingCard initialCourses={courseSchedule} initialTableConfig={courseTableConfig} />
+            <section className="rounded-[28px] border border-[var(--line)] bg-[var(--panel)] p-5">
+              <h3 className="text-xl font-semibold">课表预览</h3>
+              <p className="mt-2 text-sm text-[var(--muted)]">保存课表后，可去“课表”分栏查看周视图网格。</p>
+              <Link className="mt-4 inline-flex rounded-full border border-[var(--line)] bg-white px-4 py-2 text-sm text-[var(--muted)] hover:text-[var(--accent)]" href="/?section=courses">
+                去看周课表
+              </Link>
+            </section>
           </section>
         </section>
       ) : null}

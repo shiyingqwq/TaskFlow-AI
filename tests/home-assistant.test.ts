@@ -69,12 +69,17 @@ describe("home assistant local planner", () => {
       dueWaitingTasks: [],
     });
 
-    expect(result?.reply).toContain("是否将");
+    expect(result?.reply).toContain("高风险改动预览");
     expect(result?.actions).toEqual([]);
-    expect(result?.pendingAction).toEqual({
-      type: "update_status",
-      taskId: "task-urgent",
-      status: "in_progress",
+    expect(result?.pendingAction).toMatchObject({
+      type: "confirm_actions",
+      actions: [
+        {
+          type: "update_status",
+          taskId: "task-urgent",
+          status: "in_progress",
+        },
+      ],
     });
   });
 
@@ -120,10 +125,15 @@ describe("home assistant local planner", () => {
     });
 
     expect(result?.actions).toEqual([]);
-    expect(result?.pendingAction).toEqual({
-      type: "update_status",
-      taskId: "task-followup",
-      status: "done",
+    expect(result?.pendingAction).toMatchObject({
+      type: "confirm_actions",
+      actions: [
+        {
+          type: "update_status",
+          taskId: "task-followup",
+          status: "done",
+        },
+      ],
     });
     expect(result?.referencedTaskIds).toEqual(["task-followup"]);
   });
@@ -143,9 +153,16 @@ describe("home assistant local planner", () => {
       dueWaitingTasks: [],
       context: {
         pendingAction: {
-          type: "update_status",
-          taskId: "task-confirm",
-          status: "done",
+          type: "confirm_actions",
+          actions: [
+            {
+              type: "update_status",
+              taskId: "task-confirm",
+              status: "done",
+            },
+          ],
+          previewText: "确认后执行",
+          impacts: [],
         },
       },
     });
@@ -175,9 +192,16 @@ describe("home assistant local planner", () => {
       dueWaitingTasks: [],
       context: {
         pendingAction: {
-          type: "update_status",
-          taskId: "task-cancel",
-          status: "done",
+          type: "confirm_actions",
+          actions: [
+            {
+              type: "update_status",
+              taskId: "task-cancel",
+              status: "done",
+            },
+          ],
+          previewText: "确认后执行",
+          impacts: [],
         },
       },
     });
@@ -199,13 +223,17 @@ describe("home assistant local planner", () => {
       dueWaitingTasks: [],
     });
 
-    expect(result?.actions).toEqual([
-      {
-        type: "create_task",
-        sourceText: "明天下午三点去打印材料",
-      },
-    ]);
-    expect(result?.reply).toContain("我会新增一条任务");
+    expect(result?.actions).toEqual([]);
+    expect(result?.pendingAction).toMatchObject({
+      type: "confirm_actions",
+      actions: [
+        {
+          type: "create_task",
+          sourceText: "明天下午三点去打印材料",
+        },
+      ],
+    });
+    expect(result?.reply).toContain("高风险改动预览");
   });
 
   it("does not present completed tasks as active work in the task overview", () => {

@@ -6,8 +6,11 @@ import { statusLabels } from "@/lib/constants";
 import { getAiRuntimeConfig } from "@/lib/server/app-settings";
 import {
   createAssistantTask,
+  deleteSource,
   getDashboardData,
   recordTaskProgress,
+  restoreTaskAssistantSnapshot,
+  restoreTaskProgressLogs,
   resetTaskProgressCycle,
   resolveTaskReview,
   scheduleTaskFollowUp,
@@ -25,6 +28,7 @@ export type AssistantHistoryMessage = {
 export type AssistantConversationContext = {
   lastReferencedTaskId?: string | null;
   pendingAction?: AssistantPendingAction | null;
+  undoAction?: AssistantUndoAction | null;
 };
 
 type DashboardTask = Awaited<ReturnType<typeof getDashboardData>>["tasks"][number];
@@ -66,7 +70,54 @@ const assistantResponseSchema = z.object({
 });
 
 type AssistantPlannedAction = z.infer<typeof assistantResponseSchema>["actions"][number];
-export type AssistantPendingAction = AssistantPlannedAction;
+export type AssistantImpactItem = {
+  taskId: string;
+  taskTitle: string;
+  changedFields: string[];
+};
+
+type AssistantPendingActionBundle = {
+  type: "confirm_actions";
+  actions: AssistantPlannedAction[];
+  previewText: string;
+  impacts: AssistantImpactItem[];
+};
+
+export type AssistantPendingAction = AssistantPendingActionBundle;
+
+type AssistantUndoOperation =
+  | {
+      type: "restore_task_snapshot";
+      snapshot: {
+        taskId: string;
+        taskTitle: string;
+        status: TaskStatus;
+        needsHumanReview: boolean;
+        reviewResolved: boolean;
+        reviewReasons: string[];
+        waitingFor: string | null;
+        waitingReasonType: string | null;
+        waitingReasonText: string | null;
+        nextCheckAt: string | null;
+      };
+    }
+  | {
+      type: "restore_progress_logs";
+      taskId: string;
+      taskTitle: string;
+      completedAts: string[];
+    }
+  | {
+      type: "delete_source";
+      sourceId: string;
+      sourceLabel: string;
+    };
+
+export type AssistantUndoAction = {
+  type: "undo_actions";
+  actions: AssistantUndoOperation[];
+  summary?: string;
+};
 
 type AssistantResult = {
   reply: string;
@@ -74,6 +125,7 @@ type AssistantResult = {
     taskId: string;
     taskTitle: string;
     summary: string;
+    impact?: AssistantImpactItem;
     createdTaskCards?: Array<{
       taskId: string;
       title: string;
@@ -86,6 +138,7 @@ type AssistantResult = {
   changedTaskIds: string[];
   referencedTaskIds: string[];
   pendingAction?: AssistantPendingAction | null;
+  undoAction?: AssistantUndoAction | null;
 };
 
 async function getClient() {
@@ -319,46 +372,111 @@ function collectReferencedTaskIds(reply: string, actions: AssistantPlannedAction
   return [];
 }
 
-function getPendingActionTaskId(action: AssistantPendingAction | null | undefined) {
-  if (!action || !("taskId" in action)) {
-    return null;
+function getPendingActionTaskIds(action: AssistantPendingAction | null | undefined) {
+  if (!action) {
+    return [] as string[];
   }
 
-  return action.taskId;
+  return [
+    ...new Set(
+      action.actions
+        .map((item) => ("taskId" in item ? item.taskId : null))
+        .filter((taskId): taskId is string => Boolean(taskId)),
+    ),
+  ];
 }
 
-function describePendingAction(action: AssistantPendingAction, taskMap: Map<string, DashboardTask>) {
+function isHighRiskAction(action: AssistantPlannedAction) {
+  return action.type === "update_status" || action.type === "create_task";
+}
+
+function buildActionImpact(action: AssistantPlannedAction, taskMap: Map<string, DashboardTask>): AssistantImpactItem {
   if (action.type === "create_task") {
-    return `是否新增这条任务：${action.sourceText}？`;
+    return {
+      taskId: "new",
+      taskTitle: "新建任务（从对话内容解析）",
+      changedFields: ["source", "tasks", "status", "needsHumanReview"],
+    };
   }
 
   const task = taskMap.get(action.taskId);
-  if (!task) {
-    return "这条待执行动作对应的任务已经找不到了。";
-  }
+  const taskTitle = task?.title ?? action.taskId;
 
   if (action.type === "update_status") {
-    return `是否将「${task.title}」标记为${statusLabels[action.status]}？`;
+    return {
+      taskId: action.taskId,
+      taskTitle,
+      changedFields: ["status", "needsHumanReview", "reviewResolved", "reviewReasons"],
+    };
   }
 
   if (action.type === "resolve_review") {
-    return `是否确认「${task.title}」的解析结果无误？`;
+    return {
+      taskId: action.taskId,
+      taskTitle,
+      changedFields: ["needsHumanReview", "reviewResolved", "reviewReasons", "status"],
+    };
+  }
+
+  if (action.type === "schedule_follow_up") {
+    return {
+      taskId: action.taskId,
+      taskTitle,
+      changedFields: ["status", "nextCheckAt"],
+    };
+  }
+
+  return {
+    taskId: action.taskId,
+    taskTitle,
+    changedFields: ["progressLogs"],
+  };
+}
+
+function describeAction(action: AssistantPlannedAction, taskMap: Map<string, DashboardTask>) {
+  if (action.type === "create_task") {
+    return `新增任务：${action.sourceText}`;
+  }
+
+  const task = taskMap.get(action.taskId);
+  const title = task?.title ?? action.taskId;
+
+  if (action.type === "update_status") {
+    return `将「${title}」标记为${statusLabels[action.status]}`;
+  }
+
+  if (action.type === "resolve_review") {
+    return `确认「${title}」解析结果`;
   }
 
   if (action.type === "schedule_follow_up") {
     const label = action.preset === "tonight" ? "今晚" : action.preset === "tomorrow" ? "明天" : "下周";
-    return `是否将「${task.title}」设为${label}再回看？`;
+    return `将「${title}」设为${label}回看`;
   }
 
   if (action.mode === "increment") {
-    return `是否给「${task.title}」记录 1 次进度？`;
+    return `给「${title}」记录 1 次进度`;
   }
 
   if (action.mode === "decrement") {
-    return `是否给「${task.title}」撤回 1 次进度？`;
+    return `给「${title}」撤回 1 次进度`;
   }
 
-  return `是否重置「${task.title}」当前这一轮进度？`;
+  return `重置「${title}」本轮进度`;
+}
+
+function buildPendingActionBundle(actions: AssistantPlannedAction[], taskMap: Map<string, DashboardTask>): AssistantPendingAction {
+  const impacts = actions.map((action) => buildActionImpact(action, taskMap));
+  const previewLines = actions.map((action, index) => `${index + 1}. ${describeAction(action, taskMap)}`);
+  const risky = actions.some((action) => isHighRiskAction(action));
+  const previewText = `${risky ? "以下是高风险改动预览，确认后才会执行：" : "以下动作待确认，确认后执行："}\n${previewLines.join("\n")}`;
+
+  return {
+    type: "confirm_actions",
+    actions,
+    previewText,
+    impacts,
+  };
 }
 
 function buildLocalPlan(input: {
@@ -370,7 +488,7 @@ function buildLocalPlan(input: {
   waitingTasks: DashboardTask[];
   dueWaitingTasks: DashboardTask[];
   context?: AssistantConversationContext;
-}): { reply: string; actions: AssistantPlannedAction[]; referencedTaskIds: string[]; pendingAction?: AssistantPendingAction | null } | null {
+}): { reply: string; actions: AssistantPlannedAction[]; referencedTaskIds: string[]; pendingAction?: AssistantPendingAction | null; confirmedFromPending?: boolean } | null {
   const { message, tasks, currentBestTask, topTasksForToday, reviewTasks, waitingTasks, dueWaitingTasks, context } = input;
   const taskMap = new Map(tasks.map((task) => [task.id, task]));
 
@@ -378,9 +496,10 @@ function buildLocalPlan(input: {
     if (/^(确认|确认执行|是的|是|好的|好|行|可以|就这样|执行)$/u.test(message)) {
       return {
         reply: "已确认，我现在执行这条动作。",
-        actions: [context.pendingAction],
-        referencedTaskIds: getPendingActionTaskId(context.pendingAction) ? [getPendingActionTaskId(context.pendingAction)!] : [],
+        actions: context.pendingAction.actions,
+        referencedTaskIds: getPendingActionTaskIds(context.pendingAction),
         pendingAction: null,
+        confirmedFromPending: true,
       };
     }
 
@@ -388,10 +507,19 @@ function buildLocalPlan(input: {
       return {
         reply: "这条待执行动作已取消，没有改动任务。",
         actions: [],
-        referencedTaskIds: getPendingActionTaskId(context.pendingAction) ? [getPendingActionTaskId(context.pendingAction)!] : [],
+        referencedTaskIds: getPendingActionTaskIds(context.pendingAction),
         pendingAction: null,
       };
     }
+  }
+
+  if (context?.undoAction && /^(撤销|撤销上一步|回滚|撤回刚才的操作)$/u.test(message)) {
+    return {
+      reply: "已收到，我会撤销上一步改动。",
+      actions: [],
+      referencedTaskIds: [],
+      pendingAction: null,
+    };
   }
 
   const summaryReply = buildLocalSummary(message, currentBestTask, topTasksForToday, reviewTasks, waitingTasks, dueWaitingTasks, tasks);
@@ -419,11 +547,12 @@ function buildLocalPlan(input: {
 
   if (createMatch?.[1]) {
     const sourceText = createMatch[1].trim();
+    const pendingAction = buildPendingActionBundle([{ type: "create_task", sourceText }], taskMap);
     return {
-      reply: `我会新增一条任务：${sourceText}`,
-      actions: [{ type: "create_task", sourceText }],
+      reply: pendingAction.previewText,
+      actions: [],
       referencedTaskIds: [],
-      pendingAction: null,
+      pendingAction,
     };
   }
 
@@ -437,9 +566,9 @@ function buildLocalPlan(input: {
       };
     }
 
-    const pendingAction: AssistantPendingAction = { type: "resolve_review", taskId: task.id };
+    const pendingAction = buildPendingActionBundle([{ type: "resolve_review", taskId: task.id }], taskMap);
     return {
-      reply: describePendingAction(pendingAction, taskMap),
+      reply: pendingAction.previewText,
       actions: [],
       referencedTaskIds: [task.id],
       pendingAction,
@@ -456,9 +585,9 @@ function buildLocalPlan(input: {
       };
     }
 
-    const pendingAction: AssistantPendingAction = { type: "schedule_follow_up", taskId: task.id, preset: "tonight" };
+    const pendingAction = buildPendingActionBundle([{ type: "schedule_follow_up", taskId: task.id, preset: "tonight" }], taskMap);
     return {
-      reply: describePendingAction(pendingAction, taskMap),
+      reply: pendingAction.previewText,
       actions: [],
       referencedTaskIds: [task.id],
       pendingAction,
@@ -475,9 +604,9 @@ function buildLocalPlan(input: {
       };
     }
 
-    const pendingAction: AssistantPendingAction = { type: "schedule_follow_up", taskId: task.id, preset: "tomorrow" };
+    const pendingAction = buildPendingActionBundle([{ type: "schedule_follow_up", taskId: task.id, preset: "tomorrow" }], taskMap);
     return {
-      reply: describePendingAction(pendingAction, taskMap),
+      reply: pendingAction.previewText,
       actions: [],
       referencedTaskIds: [task.id],
       pendingAction,
@@ -494,9 +623,9 @@ function buildLocalPlan(input: {
       };
     }
 
-    const pendingAction: AssistantPendingAction = { type: "schedule_follow_up", taskId: task.id, preset: "next_week" };
+    const pendingAction = buildPendingActionBundle([{ type: "schedule_follow_up", taskId: task.id, preset: "next_week" }], taskMap);
     return {
-      reply: describePendingAction(pendingAction, taskMap),
+      reply: pendingAction.previewText,
       actions: [],
       referencedTaskIds: [task.id],
       pendingAction,
@@ -513,9 +642,9 @@ function buildLocalPlan(input: {
       };
     }
 
-    const pendingAction: AssistantPendingAction = { type: "record_progress", taskId: task.id, mode: "reset" };
+    const pendingAction = buildPendingActionBundle([{ type: "record_progress", taskId: task.id, mode: "reset" }], taskMap);
     return {
-      reply: describePendingAction(pendingAction, taskMap),
+      reply: pendingAction.previewText,
       actions: [],
       referencedTaskIds: [task.id],
       pendingAction,
@@ -532,9 +661,9 @@ function buildLocalPlan(input: {
       };
     }
 
-    const pendingAction: AssistantPendingAction = { type: "record_progress", taskId: task.id, mode: "decrement" };
+    const pendingAction = buildPendingActionBundle([{ type: "record_progress", taskId: task.id, mode: "decrement" }], taskMap);
     return {
-      reply: describePendingAction(pendingAction, taskMap),
+      reply: pendingAction.previewText,
       actions: [],
       referencedTaskIds: [task.id],
       pendingAction,
@@ -551,9 +680,9 @@ function buildLocalPlan(input: {
       };
     }
 
-    const pendingAction: AssistantPendingAction = { type: "record_progress", taskId: task.id, mode: "increment" };
+    const pendingAction = buildPendingActionBundle([{ type: "record_progress", taskId: task.id, mode: "increment" }], taskMap);
     return {
-      reply: describePendingAction(pendingAction, taskMap),
+      reply: pendingAction.previewText,
       actions: [],
       referencedTaskIds: [task.id],
       pendingAction,
@@ -571,9 +700,12 @@ function buildLocalPlan(input: {
       };
     }
 
-    const pendingAction: AssistantPendingAction = { type: "update_status", taskId: task.id, status: statusMatch.status, note: statusMatch.note };
+    const pendingAction = buildPendingActionBundle(
+      [{ type: "update_status", taskId: task.id, status: statusMatch.status, note: statusMatch.note }],
+      taskMap,
+    );
     return {
-      reply: describePendingAction(pendingAction, taskMap),
+      reply: pendingAction.previewText,
       actions: [],
       referencedTaskIds: [task.id],
       pendingAction,
@@ -711,6 +843,16 @@ async function executeAction(action: AssistantPlannedAction, taskMap: Map<string
         statusLabel: statusLabels[task.status],
         needsHumanReview: task.needsHumanReview,
       })),
+      impact: {
+        taskId: "new",
+        taskTitle: created.source.title || "首页 AI 助手",
+        changedFields: ["source", "tasks", "status", "needsHumanReview"],
+      },
+      undoOperation: {
+        type: "delete_source" as const,
+        sourceId: created.source.id,
+        sourceLabel: created.source.title || "首页 AI 助手",
+      },
     };
   }
 
@@ -720,26 +862,66 @@ async function executeAction(action: AssistantPlannedAction, taskMap: Map<string
   }
 
   if (action.type === "update_status") {
+    const snapshot = {
+      taskId: task.id,
+      taskTitle: task.title,
+      status: task.status,
+      needsHumanReview: task.needsHumanReview,
+      reviewResolved: task.reviewResolved,
+      reviewReasons: Array.isArray(task.reviewReasons) ? task.reviewReasons.map((item) => String(item)) : [],
+      waitingFor: task.waitingFor,
+      waitingReasonType: task.waitingReasonType,
+      waitingReasonText: task.waitingReasonText,
+      nextCheckAt: task.nextCheckAt ? new Date(task.nextCheckAt).toISOString() : null,
+    };
     await updateTaskStatus(action.taskId, action.status, action.note);
     return {
       taskIds: [task.id],
       taskTitle: task.title,
       summary: `已将「${task.title}」标记为${statusLabels[action.status]}`,
       createdTaskCards: [],
+      impact: buildActionImpact(action, taskMap),
+      undoOperation: { type: "restore_task_snapshot" as const, snapshot },
     };
   }
 
   if (action.type === "resolve_review") {
+    const snapshot = {
+      taskId: task.id,
+      taskTitle: task.title,
+      status: task.status,
+      needsHumanReview: task.needsHumanReview,
+      reviewResolved: task.reviewResolved,
+      reviewReasons: Array.isArray(task.reviewReasons) ? task.reviewReasons.map((item) => String(item)) : [],
+      waitingFor: task.waitingFor,
+      waitingReasonType: task.waitingReasonType,
+      waitingReasonText: task.waitingReasonText,
+      nextCheckAt: task.nextCheckAt ? new Date(task.nextCheckAt).toISOString() : null,
+    };
     await resolveTaskReview(action.taskId, action.note);
     return {
       taskIds: [task.id],
       taskTitle: task.title,
       summary: `已确认「${task.title}」的解析结果`,
       createdTaskCards: [],
+      impact: buildActionImpact(action, taskMap),
+      undoOperation: { type: "restore_task_snapshot" as const, snapshot },
     };
   }
 
   if (action.type === "schedule_follow_up") {
+    const snapshot = {
+      taskId: task.id,
+      taskTitle: task.title,
+      status: task.status,
+      needsHumanReview: task.needsHumanReview,
+      reviewResolved: task.reviewResolved,
+      reviewReasons: Array.isArray(task.reviewReasons) ? task.reviewReasons.map((item) => String(item)) : [],
+      waitingFor: task.waitingFor,
+      waitingReasonType: task.waitingReasonType,
+      waitingReasonText: task.waitingReasonText,
+      nextCheckAt: task.nextCheckAt ? new Date(task.nextCheckAt).toISOString() : null,
+    };
     await scheduleTaskFollowUp(action.taskId, action.preset as WaitingFollowUpPreset, action.note);
     const label = action.preset === "tonight" ? "今晚" : action.preset === "tomorrow" ? "明天" : "下周";
     return {
@@ -747,35 +929,46 @@ async function executeAction(action: AssistantPlannedAction, taskMap: Map<string
       taskTitle: task.title,
       summary: `已将「${task.title}」设为${label}再回看`,
       createdTaskCards: [],
+      impact: buildActionImpact(action, taskMap),
+      undoOperation: { type: "restore_task_snapshot" as const, snapshot },
     };
   }
 
   if (action.mode === "increment") {
+    const completedAts = task.progressLogs.map((log) => new Date(log.completedAt).toISOString());
     await recordTaskProgress(action.taskId);
     return {
       taskIds: [task.id],
       taskTitle: task.title,
       summary: `已给「${task.title}」记录 1 次进度`,
       createdTaskCards: [],
+      impact: buildActionImpact(action, taskMap),
+      undoOperation: { type: "restore_progress_logs" as const, taskId: task.id, taskTitle: task.title, completedAts },
     };
   }
 
   if (action.mode === "decrement") {
+    const completedAts = task.progressLogs.map((log) => new Date(log.completedAt).toISOString());
     await undoTaskProgress(action.taskId);
     return {
       taskIds: [task.id],
       taskTitle: task.title,
       summary: `已给「${task.title}」撤回 1 次进度`,
       createdTaskCards: [],
+      impact: buildActionImpact(action, taskMap),
+      undoOperation: { type: "restore_progress_logs" as const, taskId: task.id, taskTitle: task.title, completedAts },
     };
   }
 
+  const completedAts = task.progressLogs.map((log) => new Date(log.completedAt).toISOString());
   await resetTaskProgressCycle(action.taskId);
   return {
     taskIds: [task.id],
     taskTitle: task.title,
     summary: `已重置「${task.title}」当前这一轮进度`,
     createdTaskCards: [],
+    impact: buildActionImpact(action, taskMap),
+    undoOperation: { type: "restore_progress_logs" as const, taskId: task.id, taskTitle: task.title, completedAts },
   };
 }
 
@@ -793,6 +986,7 @@ export async function handleHomeAssistantMessage(input: {
       changedTaskIds: [],
       referencedTaskIds: [],
       pendingAction: null,
+      undoAction: null,
     };
   }
 
@@ -805,6 +999,51 @@ export async function handleHomeAssistantMessage(input: {
       changedTaskIds: [],
       referencedTaskIds: [],
       pendingAction: null,
+      undoAction: null,
+    };
+  }
+
+  if (input.context?.undoAction && /^(撤销|撤销上一步|回滚|撤回刚才的操作)$/u.test(message)) {
+    const summaries: string[] = [];
+    const changedTaskIds: string[] = [];
+
+    for (const operation of input.context.undoAction.actions) {
+      if (operation.type === "restore_task_snapshot") {
+        await restoreTaskAssistantSnapshot({
+          taskId: operation.snapshot.taskId,
+          status: operation.snapshot.status,
+          needsHumanReview: operation.snapshot.needsHumanReview,
+          reviewResolved: operation.snapshot.reviewResolved,
+          reviewReasons: operation.snapshot.reviewReasons,
+          waitingFor: operation.snapshot.waitingFor,
+          waitingReasonType: operation.snapshot.waitingReasonType,
+          waitingReasonText: operation.snapshot.waitingReasonText,
+          nextCheckAt: operation.snapshot.nextCheckAt,
+        });
+        changedTaskIds.push(operation.snapshot.taskId);
+        summaries.push(`已恢复「${operation.snapshot.taskTitle}」`);
+        continue;
+      }
+
+      if (operation.type === "restore_progress_logs") {
+        await restoreTaskProgressLogs(operation.taskId, operation.completedAts);
+        changedTaskIds.push(operation.taskId);
+        summaries.push(`已恢复「${operation.taskTitle}」进度`);
+        continue;
+      }
+
+      await deleteSource(operation.sourceId);
+      summaries.push(`已删除来源「${operation.sourceLabel}」及其新增任务`);
+    }
+
+    return {
+      reply: `已撤销上一步操作。${summaries.join("；")}`,
+      actionResults: [],
+      mode: "local",
+      changedTaskIds: [...new Set(changedTaskIds)],
+      referencedTaskIds: [...new Set(changedTaskIds)],
+      pendingAction: null,
+      undoAction: null,
     };
   }
 
@@ -845,15 +1084,36 @@ export async function handleHomeAssistantMessage(input: {
         });
 
   const taskMap = new Map(dashboard.tasks.map((task) => [task.id, task]));
+
+  if (!planned.confirmedFromPending && (planned.pendingAction?.actions.length ?? 0) === 0 && planned.actions.length > 0) {
+    const containsHighRisk = planned.actions.some((action) => isHighRiskAction(action));
+    if (containsHighRisk) {
+      const pendingAction = buildPendingActionBundle(planned.actions, taskMap);
+      return {
+        reply: pendingAction.previewText,
+        actionResults: [],
+        mode: localPlan ? "local" : "ai",
+        changedTaskIds: [],
+        referencedTaskIds: [...new Set([...(planned.referencedTaskIds ?? []), ...getPendingActionTaskIds(pendingAction)])],
+        pendingAction,
+        undoAction: input.context?.undoAction ?? null,
+      };
+    }
+  }
   const actionResults: AssistantResult["actionResults"] = [];
+  const undoOperations: AssistantUndoOperation[] = [];
 
   for (const action of planned.actions) {
     const result = await executeAction(action, taskMap);
     if (result) {
+      if (result.undoOperation) {
+        undoOperations.unshift(result.undoOperation);
+      }
       actionResults.push({
         taskId: result.taskIds[0] ?? "",
         taskTitle: result.taskTitle,
         summary: result.summary,
+        impact: result.impact,
         createdTaskCards: result.createdTaskCards,
       });
     }
@@ -872,6 +1132,14 @@ export async function handleHomeAssistantMessage(input: {
     changedTaskIds,
     referencedTaskIds: [...new Set([...(planned.referencedTaskIds ?? []), ...actionResults.map((item) => item.taskId).filter(Boolean)])],
     pendingAction: planned.pendingAction ?? null,
+    undoAction:
+      undoOperations.length > 0
+        ? {
+            type: "undo_actions",
+            actions: undoOperations,
+            summary: `可撤销 ${undoOperations.length} 项变更`,
+          }
+        : null,
   };
 }
 

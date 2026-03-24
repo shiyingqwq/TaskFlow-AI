@@ -1279,6 +1279,95 @@ export async function resolveTaskReview(taskId: string, note?: string) {
   return task;
 }
 
+export async function restoreTaskAssistantSnapshot(input: {
+  taskId: string;
+  status: TaskStatus;
+  needsHumanReview: boolean;
+  reviewResolved: boolean;
+  reviewReasons: string[];
+  waitingFor: string | null;
+  waitingReasonType: string | null;
+  waitingReasonText: string | null;
+  nextCheckAt: string | Date | null;
+}) {
+  const existing = await prisma.task.findUnique({
+    where: { id: input.taskId },
+  });
+
+  if (!existing) {
+    throw new Error(`Task ${input.taskId} not found`);
+  }
+
+  const restored = await prisma.task.update({
+    where: { id: input.taskId },
+    data: {
+      status: input.status,
+      needsHumanReview: input.needsHumanReview,
+      reviewResolved: input.reviewResolved,
+      reviewReasons: input.reviewReasons,
+      waitingFor: input.waitingFor,
+      waitingReasonType: input.waitingReasonType,
+      waitingReasonText: input.waitingReasonText,
+      nextCheckAt: input.nextCheckAt,
+    },
+  });
+
+  await prisma.actionLog.create({
+    data: {
+      taskId: input.taskId,
+      actionType: ActionType.edited,
+      note: "撤销了首页 AI 助手的任务字段修改",
+    },
+  });
+
+  await recalculateAllPriorities();
+  return restored;
+}
+
+export async function restoreTaskProgressLogs(taskId: string, completedAts: Array<string | Date>) {
+  const existing = await prisma.task.findUnique({
+    where: { id: taskId },
+  });
+
+  if (!existing) {
+    throw new Error(`Task ${taskId} not found`);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.taskProgressLog.deleteMany({
+      where: { taskId },
+    });
+
+    if (completedAts.length > 0) {
+      await tx.taskProgressLog.createMany({
+        data: completedAts.map((completedAt) => ({
+          taskId,
+          completedAt,
+        })),
+      });
+    }
+
+    await tx.actionLog.create({
+      data: {
+        taskId,
+        actionType: ActionType.edited,
+        note: "撤销了首页 AI 助手的进度变更",
+      },
+    });
+  });
+
+  await recalculateAllPriorities();
+
+  return prisma.task.findUnique({
+    where: { id: taskId },
+    include: {
+      progressLogs: {
+        orderBy: { completedAt: "desc" },
+      },
+    },
+  });
+}
+
 export async function getDashboardData(filter = "all") {
   try {
     await sanitizeTaskJsonColumns();

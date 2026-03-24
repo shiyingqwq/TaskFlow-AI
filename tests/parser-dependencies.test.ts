@@ -30,6 +30,7 @@ function createTask(overrides: Partial<ExtractedTaskInput>): ExtractedTaskInput 
     confidence: 0.8,
     evidenceSnippet: "证据片段",
     nextActionSuggestion: "先推进最小可执行的一步。",
+    estimatedMinutes: null,
     ...overrides,
   };
 }
