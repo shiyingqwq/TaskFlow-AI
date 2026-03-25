@@ -46,6 +46,7 @@ export function getSkillToolCatalog(skill: AssistantSkill) {
       "record_progress",
       "schedule_follow_up",
       "create_task",
+      "delete_task",
     ];
   }
 

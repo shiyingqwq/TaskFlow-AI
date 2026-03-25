@@ -23,6 +23,13 @@ type AssistantMessage = {
   hasPendingAction?: boolean;
   hasUndoAction?: boolean;
   isPending?: boolean;
+  trace?: Array<{
+    step: number;
+    planner: "local" | "ai";
+    actions: string[];
+    results: string[];
+    stopReason?: "requires_confirmation" | "no_actions" | "duplicate_actions" | "max_steps_reached" | "local_plan_completed" | "no_followup_plan";
+  }>;
 };
 
 type PlannedAction =
@@ -51,6 +58,10 @@ type PlannedAction =
   | {
       type: "create_task";
       sourceText: string;
+    }
+  | {
+      type: "delete_task";
+      taskId: string;
     }
   | {
       type: "auto_fix_time_semantics";
@@ -123,6 +134,16 @@ type ClarifyState = {
 };
 
 const quickPrompts = ["现在最该做什么？", "帮我看待确认队列", "新增任务：明天下午三点去打印材料", "把最紧急那条标记为进行中"];
+
+function formatTraceStopReason(reason: NonNullable<AssistantMessage["trace"]>[number]["stopReason"]) {
+  if (reason === "requires_confirmation") return "等待确认";
+  if (reason === "no_actions") return "无后续动作";
+  if (reason === "duplicate_actions") return "检测到重复动作";
+  if (reason === "max_steps_reached") return "达到步数上限";
+  if (reason === "local_plan_completed") return "本地计划已完成";
+  if (reason === "no_followup_plan") return "无后续计划";
+  return "";
+}
 
 export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
   const router = useRouter();
@@ -248,6 +269,13 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
         pendingAction?: PendingAction | null;
         undoAction?: UndoAction | null;
         clarifyState?: ClarifyState | null;
+        trace?: Array<{
+          step: number;
+          planner: "local" | "ai";
+          actions: string[];
+          results: string[];
+          stopReason?: "requires_confirmation" | "no_actions" | "duplicate_actions" | "max_steps_reached" | "local_plan_completed" | "no_followup_plan";
+        }>;
         error?: string;
       };
 
@@ -271,6 +299,7 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
         createdTaskCards: payload.actionResults?.flatMap((item) => item.createdTaskCards ?? []) ?? [],
         hasPendingAction: Boolean(payload.pendingAction),
         hasUndoAction: Boolean(payload.undoAction),
+        trace: payload.trace ?? [],
       });
 
       if ((payload.changedTaskIds?.length ?? 0) > 0) {
@@ -390,10 +419,10 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
                         <p>{message.isPending ? `${message.content}（无整页刷新）` : message.content}</p>
                         {message.actionSummaries && message.actionSummaries.length > 0 ? (
                           <div className="mt-3 flex flex-wrap gap-2">
-                            {message.actionSummaries.map((summary) => (
+                            {message.actionSummaries.map((summary, index) => (
                               <span
                                 className="rounded-full bg-[rgba(255,250,243,0.96)] px-2.5 py-1 text-xs text-[var(--text)] ring-1 ring-[rgba(71,53,31,0.08)]"
-                                key={summary}
+                                key={`${summary}-${index}`}
                               >
                                 {summary}
                               </span>
@@ -402,10 +431,10 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
                         ) : null}
                         {message.actionImpacts && message.actionImpacts.length > 0 ? (
                           <div className="mt-3 space-y-2">
-                            {message.actionImpacts.map((impact) => (
+                            {message.actionImpacts.map((impact, index) => (
                               <div
                                 className="rounded-2xl bg-white/85 px-3 py-2 text-xs text-[var(--muted)] ring-1 ring-[rgba(71,53,31,0.08)]"
-                                key={`${impact.taskId}-${impact.taskTitle}`}
+                                key={`${impact.taskId}-${impact.taskTitle}-${index}`}
                               >
                                 <p className="text-[var(--text)]">影响对象：{impact.taskTitle}</p>
                                 <p className="mt-1">变更字段：{impact.changedFields.join("、")}</p>
@@ -443,6 +472,25 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
                               </div>
                             ))}
                           </div>
+                        ) : null}
+                        {message.trace && message.trace.length > 0 ? (
+                          <details className="mt-3 rounded-2xl bg-white/88 px-3 py-2 text-xs text-[var(--muted)] ring-1 ring-[rgba(71,53,31,0.08)]">
+                            <summary className="cursor-pointer select-none text-[var(--text)]">
+                              执行轨迹（{message.trace.length} 步）
+                            </summary>
+                            <div className="mt-2 space-y-2">
+                              {message.trace.map((step, index) => (
+                                <div className="rounded-xl bg-[rgba(255,250,243,0.9)] px-2.5 py-2" key={`${step.step}-${step.planner}-${index}`}>
+                                  <p className="text-[var(--text)]">
+                                    第 {step.step} 步 · {step.planner === "ai" ? "AI" : "本地"} 规划
+                                    {step.stopReason ? ` · ${formatTraceStopReason(step.stopReason)}` : ""}
+                                  </p>
+                                  {step.actions.length > 0 ? <p className="mt-1">动作：{step.actions.join("；")}</p> : null}
+                                  {step.results.length > 0 ? <p className="mt-1">结果：{step.results.join("；")}</p> : null}
+                                </div>
+                              ))}
+                            </div>
+                          </details>
                         ) : null}
                         {message.hasPendingAction ? (
                           <div className="mt-3 flex flex-wrap gap-2">

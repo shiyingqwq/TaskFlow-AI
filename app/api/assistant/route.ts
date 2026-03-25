@@ -31,6 +31,10 @@ const plannedActionSchema = z.union([
     sourceText: z.string(),
   }),
   z.object({
+    type: z.literal("delete_task"),
+    taskId: z.string(),
+  }),
+  z.object({
     type: z.literal("auto_fix_time_semantics"),
   }),
   z.object({

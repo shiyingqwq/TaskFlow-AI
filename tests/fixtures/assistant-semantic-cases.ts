@@ -56,6 +56,12 @@ export const assistantSemanticModules: AssistantSemanticModule[] = [
       { message: "一键修复时间冲突", expectState: "pending" },
       { message: "自动修复时间冲突", expectState: "pending" },
       { message: "自动修复排程问题", expectState: "pending" },
+      { message: "删除复习当天核医学课程", expectState: "pending" },
+      { message: "删掉复习当天核医学课程", expectState: "pending" },
+      { message: "批量删除待确认任务", expectState: "pending" },
+      { message: "删除待确认任务", expectState: "pending_or_clarify" },
+      { message: "帮我删除所有任务", expectState: "pending" },
+      { message: "全部删掉", expectState: "pending" },
     ],
   },
   {
@@ -77,6 +83,7 @@ export const assistantSemanticModules: AssistantSemanticModule[] = [
       { message: "帮我安排一下", expectState: "clarify" },
       { message: "帮我安排复习当天核医学课程", expectState: "clarify" },
       { message: "帮我添加3个任务，复习今日三个课程，每周三", expectState: "clarify" },
+      { message: "帮我添加3项任务，每周三重复，复习当天的三门课程", expectState: "clarify" },
       { message: "新增任务：复习今日心理学课程", expectState: "clarify" },
       { message: "帮我添加任务：今天复习病理", expectState: "clarify" },
       { message: "帮我添加任务：明天复习内科", expectState: "clarify" },
@@ -144,6 +151,7 @@ export const assistantSemanticModules: AssistantSemanticModule[] = [
       { message: "自动修复时间问题", expectState: "pending" },
       { message: "自动修复排程冲突", expectState: "pending" },
       { message: "帮我安排复习当天核医学课程到20:00", expectState: "pending_or_clarify" },
+      { message: "删除复习当天核医学课程和复习当天卫生学课程", expectState: "pending" },
     ],
   },
 ];

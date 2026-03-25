@@ -7,6 +7,7 @@ import { getCoursesForDay, normalizeCourseSchedule, type CourseScheduleItem } fr
 import { getAiRuntimeConfig, getAppSettings } from "@/lib/server/app-settings";
 import {
   createAssistantTask,
+  deleteTask,
   deleteSource,
   fixAllTaskTimeSemanticConflicts,
   getDashboardData,
@@ -60,6 +61,9 @@ type AssistantStrategyPolicy = {
   maxClarifyTurns: number;
 };
 
+const AI_AUTONOMOUS_MAX_STEPS = 3;
+
+type DashboardData = Awaited<ReturnType<typeof getDashboardData>>;
 type DashboardTask = Awaited<ReturnType<typeof getDashboardData>>["tasks"][number];
 
 const statusActionSchema = z.object({
@@ -91,6 +95,11 @@ const progressActionSchema = z.object({
 const createTaskActionSchema = z.object({
   type: z.literal("create_task"),
   sourceText: z.string().min(1),
+});
+
+const deleteTaskActionSchema = z.object({
+  type: z.literal("delete_task"),
+  taskId: z.string().min(1),
 });
 
 const autoFixTimeActionSchema = z.object({
@@ -138,7 +147,7 @@ const updateTaskCoreActionSchema = z.object({
 
 const assistantResponseSchema = z.object({
   reply: z.string().min(1),
-  actions: z.array(z.union([statusActionSchema, reviewActionSchema, followUpActionSchema, progressActionSchema, createTaskActionSchema, autoFixTimeActionSchema, updateTaskCoreActionSchema])).default([]),
+  actions: z.array(z.union([statusActionSchema, reviewActionSchema, followUpActionSchema, progressActionSchema, createTaskActionSchema, deleteTaskActionSchema, autoFixTimeActionSchema, updateTaskCoreActionSchema])).default([]),
 });
 
 type AssistantPlannedAction = z.infer<typeof assistantResponseSchema>["actions"][number];
@@ -212,7 +221,35 @@ type AssistantResult = {
   pendingAction?: AssistantPendingAction | null;
   undoAction?: AssistantUndoAction | null;
   clarifyState?: AssistantClarifyState | null;
+  trace?: Array<{
+    step: number;
+    planner: "local" | "ai";
+    actions: string[];
+    results: string[];
+    stopReason?: "requires_confirmation" | "no_actions" | "duplicate_actions" | "max_steps_reached" | "local_plan_completed" | "no_followup_plan";
+  }>;
 };
+
+function shouldPreferLocalPlan(plan: {
+  actions: AssistantPlannedAction[];
+  pendingAction?: AssistantPendingAction | null;
+  clarifyState?: AssistantClarifyState | null;
+  confirmedFromPending?: boolean;
+} | null) {
+  if (!plan) {
+    return false;
+  }
+  if (plan.confirmedFromPending) {
+    return true;
+  }
+  if (plan.pendingAction) {
+    return true;
+  }
+  if (plan.clarifyState) {
+    return true;
+  }
+  return plan.actions.length > 0;
+}
 
 async function getClient() {
   const config = await getAiRuntimeConfig();
@@ -362,17 +399,17 @@ function extractCourseTitlesFromSummary(summary: string) {
 }
 
 function parseTaskCountHint(message: string) {
-  const arabic = message.match(/(\d+)\s*个?任务/);
+  const arabic = message.match(/(\d+)\s*(?:个|项|条|门)?(?:任务|课程)/);
   if (arabic) {
     return Math.max(1, Number(arabic[1]));
   }
-  if (/三个?任务/.test(message)) {
+  if (/(三|3)\s*(?:个|项|条|门)?(?:任务|课程)/.test(message)) {
     return 3;
   }
-  if (/两个?任务/.test(message)) {
+  if (/(两|二|2)\s*(?:个|项|条|门)?(?:任务|课程)/.test(message)) {
     return 2;
   }
-  if (/一个?任务/.test(message)) {
+  if (/(一|1)\s*(?:个|项|条|门)?(?:任务|课程)/.test(message)) {
     return 1;
   }
   return null;
@@ -601,7 +638,7 @@ function buildLocalSummary(
 ) {
   const looksLikeMutation =
     /(?:新增|添加|创建|加|记).*(任务|待办)/.test(message) ||
-    /(安排到|排到|标记为|改成|设为|更新|修改|调到|放到)/.test(message);
+    /(安排到|排到|标记为|改成|设为|更新|修改|调到|放到|删除|删掉|移除)/.test(message);
 
   if (/现在最该做|最紧急|先做什么|该做什么|今天必须推进/.test(message)) {
     if (!currentBestTask) {
@@ -718,7 +755,7 @@ function getPendingActionTaskIds(action: AssistantPendingAction | null | undefin
 }
 
 function isHighRiskAction(action: AssistantPlannedAction) {
-  return action.type === "update_status" || action.type === "create_task" || action.type === "update_task_core" || action.type === "auto_fix_time_semantics";
+  return action.type === "update_status" || action.type === "create_task" || action.type === "delete_task" || action.type === "update_task_core" || action.type === "auto_fix_time_semantics";
 }
 
 function buildActionImpact(action: AssistantPlannedAction, taskMap: Map<string, DashboardTask>): AssistantImpactItem {
@@ -727,6 +764,15 @@ function buildActionImpact(action: AssistantPlannedAction, taskMap: Map<string, 
       taskId: "new",
       taskTitle: "新建任务（从对话内容解析）",
       changedFields: ["source", "tasks", "status", "needsHumanReview"],
+    };
+  }
+
+  if (action.type === "delete_task") {
+    const task = taskMap.get(action.taskId);
+    return {
+      taskId: action.taskId,
+      taskTitle: task?.title ?? action.taskId,
+      changedFields: ["deleted"],
     };
   }
 
@@ -785,6 +831,12 @@ function describeAction(action: AssistantPlannedAction, taskMap: Map<string, Das
     return `新增任务：${action.sourceText}`;
   }
 
+  if (action.type === "delete_task") {
+    const task = taskMap.get(action.taskId);
+    const title = task?.title ?? action.taskId;
+    return `删除任务「${title}」`;
+  }
+
   if (action.type === "auto_fix_time_semantics") {
     return "一键修复时间语义冲突（开始时间晚于截止）";
   }
@@ -819,6 +871,17 @@ function describeAction(action: AssistantPlannedAction, taskMap: Map<string, Das
   }
 
   return `重置「${title}」本轮进度`;
+}
+
+function findExplicitlyMentionedTasks(tasks: DashboardTask[], message: string) {
+  const normalizedMessage = normalizeFreeText(message);
+  return tasks.filter((task) => {
+    const normalizedTitle = normalizeFreeText(task.title);
+    if (normalizedTitle.length < 2) {
+      return false;
+    }
+    return normalizedMessage.includes(normalizedTitle);
+  });
 }
 
 function reconcileTaskCoreSchedulePatch(
@@ -953,7 +1016,11 @@ function buildLocalPlan(input: {
 
   if (
     /(新增|添加|创建|加).*(任务|待办)/.test(message) &&
-    (/(今天|今日).*(课程)|课程.*(今天|今日)|三个课程|3个课程/.test(message)) &&
+    (
+      /(今天|今日|当天|当日).*(课程|门课)/.test(message) ||
+      /课程.*(今天|今日|当天|当日)/.test(message) ||
+      /(三|3)\s*(?:个|门)?课程/.test(message)
+    ) &&
     /(每周三|周三|星期三)/.test(message)
   ) {
     const courseTitles = extractCourseTitlesFromSummary(courseContext?.todayCourseSummary ?? "");
@@ -1033,8 +1100,9 @@ function buildLocalPlan(input: {
     };
   }
 
+  const deleteIntent = /(删除|删掉|删了|移除).*(任务|待办)?/.test(message) && !/(来源|source|文件|文档)/i.test(message);
   const picked = pickTaskFromMessage(tasks, message, currentBestTask, reviewTasks, waitingTasks, context?.lastReferencedTaskId);
-  if (picked.ambiguous) {
+  if (picked.ambiguous && !deleteIntent) {
     return {
       reply: "我能看出你要改某条任务，但当前匹配到不止一条。你可以再带上更完整的任务标题，或直接贴任务 id。",
       actions: [] as AssistantPlannedAction[],
@@ -1049,6 +1117,66 @@ function buildLocalPlan(input: {
     ((statusKeywordMap.find((item) => item.pattern.test(message)) && policy.autoSelectCurrentBestTaskOnStatus) ? currentBestTask : null);
   const task = inferredTask;
   const parsedTime = parseClockTimeFromText(message);
+
+  if (deleteIntent) {
+    const explicitTargets = findExplicitlyMentionedTasks(tasks, message);
+    const deleteAllKeyword = /(全部|所有|全删|清空|统统|全部都)/.test(message);
+    const batchKeyword = /(批量|多个|几条|几项|这些|这几条|全部|所有|一起|统统)/.test(message);
+    let targets: DashboardTask[] = [];
+
+    if (explicitTargets.length > 0) {
+      targets = explicitTargets;
+    } else if (deleteAllKeyword) {
+      targets = tasks;
+    } else if (/待确认|确认队列|需要确认/.test(message) && reviewTasks.length > 0) {
+      targets = reviewTasks;
+    } else if (/等待任务|等待中|回看/.test(message) && waitingTasks.length > 0) {
+      targets = waitingTasks;
+    } else if (/今天任务|今日任务|今天要做|今天优先/.test(message) && topTasksForToday.length > 0) {
+      targets = topTasksForToday;
+    } else if (task) {
+      targets = [task];
+    }
+
+    if (targets.length === 0) {
+      return {
+        reply: deleteAllKeyword ? "当前没有可删除任务。" : "可以删，但我还没定位到具体任务。请补任务标题，或直接说“删除待确认任务”。",
+        actions: [],
+        referencedTaskIds: [],
+        pendingAction: null,
+      };
+    }
+
+    if (!batchKeyword && explicitTargets.length === 0 && targets.length > 1) {
+      return {
+        reply: "你这句可能会删多条任务。为避免误删，请补一句“批量删除”或明确列出任务标题。",
+        actions: [],
+        referencedTaskIds: targets.map((item) => item.id),
+        pendingAction: null,
+      };
+    }
+
+    const uniqueTargets = [...new Map(targets.map((item) => [item.id, item])).values()];
+    if (uniqueTargets.length > 200) {
+      return {
+        reply: `这次会删除 ${uniqueTargets.length} 条任务，超出安全上限（200）。请先按范围分批删除。`,
+        actions: [],
+        referencedTaskIds: [],
+        pendingAction: null,
+      };
+    }
+    const pendingAction = buildPendingActionBundle(
+      uniqueTargets.map((item) => ({ type: "delete_task", taskId: item.id })),
+      taskMap,
+    );
+    return {
+      reply: pendingAction.previewText,
+      actions: [],
+      referencedTaskIds: uniqueTargets.map((item) => item.id),
+      pendingAction,
+      clarifyState: null,
+    };
+  }
 
   if (/(一键修复|自动修复).*(时间|截止|排程).*(冲突|问题)?/.test(message)) {
     const pendingAction = buildPendingActionBundle([{ type: "auto_fix_time_semantics" }], taskMap);
@@ -1488,14 +1616,17 @@ actions 仅允许以下类型：
 3. {"type":"schedule_follow_up","taskId":"...","preset":"tonight|tomorrow|next_week","note":"可选"}
 4. {"type":"record_progress","taskId":"...","mode":"increment|decrement|reset"}
 5. {"type":"create_task","sourceText":"用户要新增的任务原文"}
-6. {"type":"auto_fix_time_semantics"}
-7. {"type":"update_task_core","taskId":"...","patch":{"可编辑字段": "值"}}
+6. {"type":"delete_task","taskId":"..."}
+7. {"type":"auto_fix_time_semantics"}
+8. {"type":"update_task_core","taskId":"...","patch":{"可编辑字段": "值"}}
 
 规则：
 1. 只有当用户明确要求修改任务时，才能填写 actions。
 1.1 如果用户明确说“新增任务/加一个任务/记一个任务”，可以使用 create_task。
 1.2 如果用户只是口头确认上一轮挂起动作，例如“是的/确认/可以”，请直接执行当前 pendingAction。
 2. 如果任务不明确、可能有歧义、或你拿不准 taskId，就不要执行动作，只在 reply 里要求用户澄清。
+2.0 支持批量删除任务：当用户明确说“批量删除/删除这些/删除待确认任务”等，允许返回多个 delete_task 动作。
+2.4 允许在一次回复里组合多条 actions（连续工具调用），例如先 update_task_core 再 update_status。
 2.1 你可以参考今日课表与空档给出建议，但课表问题本身不应触发 actions。
 2.2 若用户要求“调整今日日程安排”，优先使用 update_task_core 修改 startAtISO、estimatedMinutes、snoozeUntilISO、status 等字段。
 2.3 任何涉及 startAtISO/deadlineISO 的调整，都要确保开始时间不晚于截止时间；若用户明确要改到更晚时间，应一并给出截止顺延方案。
@@ -1547,6 +1678,20 @@ ${historyText}
 
 用户本轮输入：
 ${args.message}`;
+}
+
+function buildLoadedDataSummary(
+  skill: AssistantSkill,
+  dashboard: DashboardData,
+  courseContext: CourseAssistantContext,
+) {
+  if (skill === "course_reader") {
+    return `已读取：今日课程 ${courseContext.todayCourses.length} 节；空档 ${courseContext.todayFreeWindowSummary}`;
+  }
+  if (skill === "schedule_ops") {
+    return `已读取：今日日程摘要；必须任务 ${dashboard.todayMustDoTasks.length} 条；提醒 ${dashboard.todayReminderTasks.length} 条`;
+  }
+  return `已读取：任务总数 ${dashboard.tasks.length}；待确认 ${dashboard.reviewTasks.length}；等待 ${dashboard.waitingTasks.length}`;
 }
 
 async function planWithAi(args: {
@@ -1628,6 +1773,18 @@ async function executeAction(action: AssistantPlannedAction, taskMap: Map<string
         sourceId: created.source.id,
         sourceLabel: created.source.title || "首页 AI 助手",
       },
+    };
+  }
+
+  if (action.type === "delete_task") {
+    const task = taskMap.get(action.taskId);
+    await deleteTask(action.taskId);
+    return {
+      taskIds: [action.taskId],
+      taskTitle: task?.title ?? action.taskId,
+      summary: `已删除「${task?.title ?? action.taskId}」`,
+      createdTaskCards: [],
+      impact: buildActionImpact(action, taskMap),
     };
   }
 
@@ -1831,6 +1988,18 @@ async function executeAction(action: AssistantPlannedAction, taskMap: Map<string
   };
 }
 
+function buildCourseContextWithArrangement(settings: Awaited<ReturnType<typeof getAppSettings>>, dashboard: DashboardData) {
+  const nextCourseContext = buildCourseAssistantContext(settings.courseSchedule);
+  nextCourseContext.todayArrangementSummary = buildTodayArrangementSummary({
+    courseContext: nextCourseContext,
+    mustDoTasks: dashboard.todayMustDoTasks,
+    shouldDoTasks: dashboard.todayShouldDoTasks,
+    reminderTasks: dashboard.todayReminderTasks,
+    canWaitTasks: dashboard.todayCanWaitTasks,
+  });
+  return nextCourseContext;
+}
+
 export async function handleHomeAssistantMessage(input: {
   message: string;
   history?: AssistantHistoryMessage[];
@@ -1866,22 +2035,10 @@ export async function handleHomeAssistantMessage(input: {
 
   const settings = await getAppSettings();
   const policy = resolveAssistantStrategyPolicy(settings.courseTableConfig);
-  const courseContext = buildCourseAssistantContext(settings.courseSchedule);
-  courseContext.todayArrangementSummary = buildTodayArrangementSummary({
-    courseContext,
-    mustDoTasks: dashboard.todayMustDoTasks,
-    shouldDoTasks: dashboard.todayShouldDoTasks,
-    reminderTasks: dashboard.todayReminderTasks,
-    canWaitTasks: dashboard.todayCanWaitTasks,
-  });
+  const courseContext = buildCourseContextWithArrangement(settings, dashboard);
   const skill = detectAssistantSkill(message);
   const toolCatalog = getSkillToolCatalog(skill);
-  const loadedDataSummary =
-    skill === "course_reader"
-      ? `已读取：今日课程 ${courseContext.todayCourses.length} 节；空档 ${courseContext.todayFreeWindowSummary}`
-      : skill === "schedule_ops"
-        ? `已读取：今日日程摘要；必须任务 ${dashboard.todayMustDoTasks.length} 条；提醒 ${dashboard.todayReminderTasks.length} 条`
-        : `已读取：任务总数 ${dashboard.tasks.length}；待确认 ${dashboard.reviewTasks.length}；等待 ${dashboard.waitingTasks.length}`;
+  const loadedDataSummary = buildLoadedDataSummary(skill, dashboard, courseContext);
 
   if (input.context?.undoAction && /^(撤销|撤销上一步|回滚|撤回刚才的操作)$/u.test(message)) {
     const summaries: string[] = [];
@@ -1956,19 +2113,23 @@ export async function handleHomeAssistantMessage(input: {
     context: input.context,
   });
 
+  const aiPlanned = aiPlan
+    ? {
+        ...aiPlan,
+        referencedTaskIds: aiPlan.actions.flatMap((action) => ("taskId" in action ? [action.taskId] : [])),
+      }
+    : null;
+
   const planned =
+    (shouldPreferLocalPlan(localPlan) ? localPlan : null) ??
+    aiPlanned ??
     localPlan ??
-    (aiPlan
-      ? {
-          ...aiPlan,
-          referencedTaskIds: aiPlan.actions.flatMap((action) => ("taskId" in action ? [action.taskId] : [])),
-        }
-      : {
-          reply: "我能读任务并帮你做常见管理动作。你可以试试：现在最该做什么、帮我看待确认队列、把某条任务标记为进行中。",
-          actions: [] as AssistantPlannedAction[],
-          referencedTaskIds: [] as string[],
-          pendingAction: null,
-        });
+    {
+      reply: "我能读任务并帮你做常见管理动作。你可以试试：现在最该做什么、帮我看待确认队列、把某条任务标记为进行中。",
+      actions: [] as AssistantPlannedAction[],
+      referencedTaskIds: [] as string[],
+      pendingAction: null,
+    };
 
   const taskMap = new Map(dashboard.tasks.map((task) => [task.id, task]));
   const normalizedPlanned = normalizePlannedActions(planned.actions, taskMap);
@@ -1981,51 +2142,202 @@ export async function handleHomeAssistantMessage(input: {
     const containsHighRisk = finalPlanned.actions.some((action) => isHighRiskAction(action));
     if (containsHighRisk) {
       const pendingAction = buildPendingActionBundle(finalPlanned.actions, taskMap, normalizedPlanned.notes);
+      const previewTrace: NonNullable<AssistantResult["trace"]> = [
+        {
+          step: 1,
+          planner: planned === localPlan ? "local" : "ai",
+          actions: finalPlanned.actions.map((action) => describeAction(action, taskMap)),
+          results: [],
+          stopReason: "requires_confirmation",
+        },
+      ];
       return {
         reply: pendingAction.previewText,
         actionResults: [],
-        mode: localPlan ? "local" : "ai",
+        mode: planned === localPlan ? "local" : "ai",
         changedTaskIds: [],
         referencedTaskIds: [...new Set([...(finalPlanned.referencedTaskIds ?? []), ...getPendingActionTaskIds(pendingAction)])],
         pendingAction,
         undoAction: input.context?.undoAction ?? null,
         clarifyState: finalPlanned.clarifyState ?? null,
+        trace: previewTrace,
       };
     }
   }
   const actionResults: AssistantResult["actionResults"] = [];
   const undoOperations: AssistantUndoOperation[] = [];
+  const actionSignatureSet = new Set<string>();
+  const trace: NonNullable<AssistantResult["trace"]> = [];
+  let referencedTaskIds = [...new Set([...(finalPlanned.referencedTaskIds ?? [])])];
+  let latestPlanned = finalPlanned;
+  let loopDashboard = dashboard;
+  let loopCourseContext = courseContext;
+  let loopReply = finalPlanned.reply;
 
-  for (const action of finalPlanned.actions) {
-    const result = await executeAction(action, taskMap);
-    if (result) {
-      if (result.undoOperation) {
-        undoOperations.unshift(result.undoOperation);
-      }
-      actionResults.push({
-        taskId: result.taskIds[0] ?? "",
-        taskTitle: result.taskTitle,
-        summary: result.summary,
-        impact: result.impact,
-        createdTaskCards: result.createdTaskCards,
+  for (let step = 0; step < AI_AUTONOMOUS_MAX_STEPS; step += 1) {
+    const stepNumber = step + 1;
+    const stepPlanner: "local" | "ai" = step === 0 && planned === localPlan ? "local" : "ai";
+    const loopTaskMap = new Map(loopDashboard.tasks.map((task) => [task.id, task]));
+    const normalizedLoop = normalizePlannedActions(latestPlanned.actions, loopTaskMap);
+    const currentActions = normalizedLoop.actions;
+    const actionDescriptions = currentActions.map((action) => describeAction(action, loopTaskMap));
+
+    if (currentActions.length === 0) {
+      trace.push({
+        step: stepNumber,
+        planner: stepPlanner,
+        actions: [],
+        results: [],
+        stopReason: "no_actions",
       });
+      break;
     }
+
+    const signature = JSON.stringify(currentActions);
+    if (actionSignatureSet.has(signature)) {
+      trace.push({
+        step: stepNumber,
+        planner: stepPlanner,
+        actions: actionDescriptions,
+        results: [],
+        stopReason: "duplicate_actions",
+      });
+      loopReply = `${loopReply}\n已停止自动连锁执行：检测到重复动作。`;
+      break;
+    }
+    actionSignatureSet.add(signature);
+
+    const containsHighRisk = currentActions.some((action) => isHighRiskAction(action));
+    if (step > 0 && containsHighRisk) {
+      trace.push({
+        step: stepNumber,
+        planner: stepPlanner,
+        actions: actionDescriptions,
+        results: [],
+        stopReason: "requires_confirmation",
+      });
+      const pendingAction = buildPendingActionBundle(currentActions, loopTaskMap, normalizedLoop.notes);
+      return {
+        reply: pendingAction.previewText,
+        actionResults,
+        mode: "ai",
+        changedTaskIds: [...new Set(actionResults.map((item) => item.taskId).filter(Boolean))],
+        referencedTaskIds: [...new Set([...referencedTaskIds, ...getPendingActionTaskIds(pendingAction), ...actionResults.map((item) => item.taskId).filter(Boolean)])],
+        pendingAction,
+        undoAction:
+          undoOperations.length > 0
+            ? {
+                type: "undo_actions",
+                actions: undoOperations,
+                summary: `可撤销 ${undoOperations.length} 项变更`,
+              }
+            : null,
+        clarifyState: null,
+        trace,
+      };
+    }
+
+    const batchSummaries: string[] = [];
+    for (const action of currentActions) {
+      const result = await executeAction(action, loopTaskMap);
+      if (result) {
+        if (result.undoOperation) {
+          undoOperations.unshift(result.undoOperation);
+        }
+        actionResults.push({
+          taskId: result.taskIds[0] ?? "",
+          taskTitle: result.taskTitle,
+          summary: result.summary,
+          impact: result.impact,
+          createdTaskCards: result.createdTaskCards,
+        });
+        batchSummaries.push(result.summary);
+      }
+    }
+
+    trace.push({
+      step: stepNumber,
+      planner: stepPlanner,
+      actions: actionDescriptions,
+      results: batchSummaries,
+    });
+
+    referencedTaskIds = [...new Set([
+      ...referencedTaskIds,
+      ...currentActions.flatMap((action) => ("taskId" in action ? [action.taskId] : [] as string[])),
+      ...actionResults.map((item) => item.taskId).filter(Boolean),
+    ])];
+
+    if (planned === localPlan || step + 1 >= AI_AUTONOMOUS_MAX_STEPS) {
+      if (trace.length > 0) {
+        trace[trace.length - 1] = {
+          ...trace[trace.length - 1],
+          stopReason: planned === localPlan ? "local_plan_completed" : "max_steps_reached",
+        };
+      }
+      break;
+    }
+
+    loopDashboard = await getDashboardData("all");
+    if (!loopDashboard.databaseReady) {
+      break;
+    }
+    loopCourseContext = buildCourseContextWithArrangement(settings, loopDashboard);
+
+    const stepPrompt = `请基于“上一批动作已执行后的最新状态”判断是否需要下一步；若不需要请返回 actions=[]。上一批执行结果：${batchSummaries.join("；")}。原始用户请求：${message}`;
+    const nextAiPlan = await planWithAi({
+      message: stepPrompt,
+      history: [
+        ...(input.history ?? []),
+        { role: "user", content: message },
+        { role: "assistant", content: loopReply },
+      ],
+      tasks: loopDashboard.tasks,
+      currentBestTask: loopDashboard.currentBestTask,
+      reviewTasks: loopDashboard.reviewTasks,
+      waitingTasks: loopDashboard.waitingTasks,
+      dueWaitingTasks: loopDashboard.dueWaitingTasks,
+      courseContext: loopCourseContext,
+      skill,
+      toolCatalog,
+      loadedDataSummary: buildLoadedDataSummary(skill, loopDashboard, loopCourseContext),
+      context: input.context,
+    });
+
+    if (!nextAiPlan) {
+      if (trace.length > 0) {
+        trace[trace.length - 1] = {
+          ...trace[trace.length - 1],
+          stopReason: "no_followup_plan",
+        };
+      }
+      break;
+    }
+
+    latestPlanned = {
+      ...nextAiPlan,
+      referencedTaskIds: nextAiPlan.actions.flatMap((action) => ("taskId" in action ? [action.taskId] : [])),
+      pendingAction: null,
+      clarifyState: null,
+    };
+    loopReply = nextAiPlan.reply;
   }
 
   const changedTaskIds = [
     ...new Set(
-      finalPlanned.actions.flatMap((action) => ("taskId" in action ? [action.taskId] : [] as string[])).concat(actionResults.map((item) => item.taskId).filter(Boolean)),
+      latestPlanned.actions.flatMap((action) => ("taskId" in action ? [action.taskId] : [] as string[])).concat(actionResults.map((item) => item.taskId).filter(Boolean)),
     ),
   ];
 
   return {
-    reply: finalPlanned.reply,
+    reply: loopReply,
     actionResults,
-    mode: localPlan ? "local" : "ai",
+    mode: planned === localPlan ? "local" : "ai",
     changedTaskIds,
-    referencedTaskIds: [...new Set([...(finalPlanned.referencedTaskIds ?? []), ...actionResults.map((item) => item.taskId).filter(Boolean)])],
-    pendingAction: finalPlanned.pendingAction ?? null,
-    clarifyState: finalPlanned.clarifyState ?? null,
+    referencedTaskIds,
+    pendingAction: latestPlanned.pendingAction ?? null,
+    clarifyState: latestPlanned.clarifyState ?? null,
+    trace,
     undoAction:
       undoOperations.length > 0
         ? {
