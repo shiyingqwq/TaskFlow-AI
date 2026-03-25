@@ -300,7 +300,7 @@ function buildScheduleLintIssues(slots: ScheduleSlot[], courses: CourseScheduleI
         issues.push(`「${task.title}」被安排在 ${slot.period}，但最早应在 ${formatMinutes(earliestStartMinutes)} 后执行。`);
       }
 
-      if (deadline) {
+      if (deadlineMinutes !== null) {
         if (slot.endMinutes > deadlineMinutes && slot.startMinutes < deadlineMinutes) {
           const estimate = estimateTaskMinutes(task);
           const effectiveStart = Math.max(slot.startMinutes, earliestStartMinutes ?? slot.startMinutes);

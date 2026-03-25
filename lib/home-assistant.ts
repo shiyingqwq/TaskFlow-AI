@@ -200,6 +200,15 @@ export type AssistantUndoAction = {
   summary?: string;
 };
 
+type AssistantResolvedPlan = {
+  reply: string;
+  actions: AssistantPlannedAction[];
+  referencedTaskIds: string[];
+  pendingAction?: AssistantPendingAction | null;
+  clarifyState?: AssistantClarifyState | null;
+  confirmedFromPending?: boolean;
+};
+
 type AssistantResult = {
   reply: string;
   actionResults: Array<{
@@ -1314,22 +1323,23 @@ function buildLocalPlan(input: {
     };
   }
 
-  if (context?.clarifyState?.type === "arrange_task_time") {
+  const arrangeClarify = context?.clarifyState?.type === "arrange_task_time" ? context.clarifyState : null;
+  if (arrangeClarify) {
     if (/^(取消|不用了|先不了|算了)$/u.test(message)) {
       return {
         reply: "好的，这次排程调整已取消。",
         actions: [],
-        referencedTaskIds: context.clarifyState.taskId ? [context.clarifyState.taskId] : [],
+        referencedTaskIds: arrangeClarify.taskId ? [arrangeClarify.taskId] : [],
         pendingAction: null,
         clarifyState: null,
       };
     }
 
     const clarifiedTask =
-      (context.clarifyState.taskId ? tasks.find((item) => item.id === context.clarifyState.taskId) ?? null : null) ??
+      (arrangeClarify.taskId ? tasks.find((item) => item.id === arrangeClarify.taskId) ?? null : null) ??
       task;
-    const clarifiedHour = parsedTime?.hour ?? context.clarifyState.hour ?? null;
-    const clarifiedMinute = parsedTime?.minute ?? context.clarifyState.minute ?? null;
+    const clarifiedHour = parsedTime?.hour ?? arrangeClarify.hour ?? null;
+    const clarifiedMinute = parsedTime?.minute ?? arrangeClarify.minute ?? null;
 
     if (clarifiedTask && clarifiedHour !== null && clarifiedMinute !== null) {
       const startAtISO = nowInTaipei().hour(clarifiedHour).minute(clarifiedMinute).second(0).millisecond(0).toISOString();
@@ -1344,7 +1354,7 @@ function buildLocalPlan(input: {
       };
     }
 
-    const currentTurns = context.clarifyState.turns ?? 0;
+    const currentTurns = arrangeClarify.turns ?? 0;
     if (currentTurns >= policy.maxClarifyTurns) {
       const fallbackTask = clarifiedTask ?? (policy.autoSelectCurrentBestTaskOnArrange ? currentBestTask : null);
       const fallbackHour = clarifiedHour ?? 19;
@@ -2113,14 +2123,17 @@ export async function handleHomeAssistantMessage(input: {
     context: input.context,
   });
 
-  const aiPlanned = aiPlan
+  const aiPlanned: AssistantResolvedPlan | null = aiPlan
     ? {
         ...aiPlan,
         referencedTaskIds: aiPlan.actions.flatMap((action) => ("taskId" in action ? [action.taskId] : [])),
+        pendingAction: null,
+        clarifyState: null,
+        confirmedFromPending: false,
       }
     : null;
 
-  const planned =
+  const planned: AssistantResolvedPlan =
     (shouldPreferLocalPlan(localPlan) ? localPlan : null) ??
     aiPlanned ??
     localPlan ??
@@ -2129,6 +2142,8 @@ export async function handleHomeAssistantMessage(input: {
       actions: [] as AssistantPlannedAction[],
       referencedTaskIds: [] as string[],
       pendingAction: null,
+      clarifyState: null,
+      confirmedFromPending: false,
     };
 
   const taskMap = new Map(dashboard.tasks.map((task) => [task.id, task]));
@@ -2169,7 +2184,7 @@ export async function handleHomeAssistantMessage(input: {
   const actionSignatureSet = new Set<string>();
   const trace: NonNullable<AssistantResult["trace"]> = [];
   let referencedTaskIds = [...new Set([...(finalPlanned.referencedTaskIds ?? [])])];
-  let latestPlanned = finalPlanned;
+  let latestPlanned: AssistantResolvedPlan = finalPlanned;
   let loopDashboard = dashboard;
   let loopCourseContext = courseContext;
   let loopReply = finalPlanned.reply;
@@ -2319,6 +2334,7 @@ export async function handleHomeAssistantMessage(input: {
       referencedTaskIds: nextAiPlan.actions.flatMap((action) => ("taskId" in action ? [action.taskId] : [])),
       pendingAction: null,
       clarifyState: null,
+      confirmedFromPending: false,
     };
     loopReply = nextAiPlan.reply;
   }
