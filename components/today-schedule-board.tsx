@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { CourseScheduleItem, getCoursesForDay } from "@/lib/course-schedule";
@@ -36,6 +37,13 @@ type ScheduleSlot = {
   tasks: ScheduleTask[];
   startMinutes: number;
   endMinutes: number;
+};
+
+type ScheduleFixCandidate = {
+  type: "start_after_deadline";
+  taskId: string;
+  title: string;
+  minimumBufferMinutes: number;
 };
 
 function toMinutes(time: string) {
@@ -275,7 +283,7 @@ function buildScheduleSlots(input: TodayScheduleBoardProps): ScheduleSlot[] {
   });
 }
 
-function buildScheduleLintIssues(slots: ScheduleSlot[], courses: CourseScheduleItem[]) {
+function buildScheduleLintIssues(slots: ScheduleSlot[], courses: CourseScheduleItem[], tasks: ScheduleTask[]) {
   const issues: string[] = [];
 
   for (const slot of slots) {
@@ -294,8 +302,35 @@ function buildScheduleLintIssues(slots: ScheduleSlot[], courses: CourseScheduleI
 
       if (deadline) {
         if (slot.endMinutes > deadlineMinutes && slot.startMinutes < deadlineMinutes) {
-          issues.push(`「${task.title}」在 ${slot.period} 跨越了截止时间 ${formatDeadline(task.deadline)}，建议前移。`);
+          const estimate = estimateTaskMinutes(task);
+          const effectiveStart = Math.max(slot.startMinutes, earliestStartMinutes ?? slot.startMinutes);
+          const canFinishBeforeDeadline = effectiveStart + estimate <= deadlineMinutes;
+          if (!canFinishBeforeDeadline) {
+            issues.push(`「${task.title}」在 ${slot.period} 内难以在截止时间 ${formatDeadline(task.deadline)} 前完成，建议前移。`);
+          }
         }
+      }
+    }
+  }
+
+  const assignedIds = new Set(slots.flatMap((slot) => slot.tasks.map((task) => task.id)));
+  for (const task of tasks) {
+    if (assignedIds.has(task.id)) {
+      continue;
+    }
+    const earliestStartMinutes = inferEarliestStartMinutes(task, courses);
+    const deadline = task.deadline ? toTaipei(task.deadline) : null;
+    const deadlineMinutes = deadline ? deadline.hour() * 60 + deadline.minute() : null;
+
+    if (earliestStartMinutes !== null && deadlineMinutes !== null && earliestStartMinutes >= deadlineMinutes) {
+      issues.push(`「${task.title}」未被分配：最早开始 ${formatMinutes(earliestStartMinutes)} 已晚于截止 ${formatDeadline(task.deadline)}。`);
+      continue;
+    }
+
+    if (earliestStartMinutes !== null) {
+      const hasViableSlot = slots.some((slot) => slot.endMinutes > earliestStartMinutes);
+      if (!hasViableSlot) {
+        issues.push(`「${task.title}」未被分配：今天可执行窗口都早于最早开始 ${formatMinutes(earliestStartMinutes)}。`);
       }
     }
   }
@@ -303,17 +338,46 @@ function buildScheduleLintIssues(slots: ScheduleSlot[], courses: CourseScheduleI
   return issues.slice(0, 6);
 }
 
+function buildFixCandidates(tasks: ScheduleTask[], courses: CourseScheduleItem[]) {
+  const candidates: ScheduleFixCandidate[] = [];
+  for (const task of tasks) {
+    const earliestStartMinutes = inferEarliestStartMinutes(task, courses);
+    const deadline = task.deadline ? toTaipei(task.deadline) : null;
+    const deadlineMinutes = deadline ? deadline.hour() * 60 + deadline.minute() : null;
+    if (earliestStartMinutes !== null && deadlineMinutes !== null && earliestStartMinutes >= deadlineMinutes) {
+      candidates.push({
+        type: "start_after_deadline",
+        taskId: task.id,
+        title: task.title,
+        minimumBufferMinutes: 20,
+      });
+    }
+  }
+  return candidates;
+}
+
 export function TodayScheduleBoard(props: TodayScheduleBoardProps) {
+  const router = useRouter();
   const slots = useMemo(
     () => buildScheduleSlots(props),
     [props.mustDoTasks, props.shouldDoTasks, props.reminderTasks, props.canWaitTasks, props.courseSchedule],
   );
-  const lintIssues = useMemo(() => buildScheduleLintIssues(slots, getCoursesForDay(props.courseSchedule)), [slots, props.courseSchedule]);
+  const scheduleTasks = useMemo(
+    () => [...props.mustDoTasks, ...props.shouldDoTasks, ...props.reminderTasks, ...props.canWaitTasks],
+    [props.mustDoTasks, props.shouldDoTasks, props.reminderTasks, props.canWaitTasks],
+  );
+  const lintIssues = useMemo(
+    () => buildScheduleLintIssues(slots, getCoursesForDay(props.courseSchedule), scheduleTasks),
+    [slots, props.courseSchedule, scheduleTasks],
+  );
   const [auditSummary, setAuditSummary] = useState<string>("");
   const [auditMode, setAuditMode] = useState<"ai" | "fallback" | "idle">("idle");
   const [auditPending, setAuditPending] = useState(false);
+  const [fixing, setFixing] = useState(false);
+  const [fixNotice, setFixNotice] = useState<string>("");
   const totalFreeMinutes = slots.reduce((sum, slot) => sum + (slot.endMinutes - slot.startMinutes), 0);
   const todayCourses = useMemo(() => getCoursesForDay(props.courseSchedule), [props.courseSchedule]);
+  const fixCandidates = useMemo(() => buildFixCandidates(scheduleTasks, todayCourses), [scheduleTasks, todayCourses]);
 
   useEffect(() => {
     let cancelled = false;
@@ -378,6 +442,43 @@ export function TodayScheduleBoard(props: TodayScheduleBoardProps) {
     };
   }, [slots, todayCourses, lintIssues]);
 
+  async function handleApplyFixes() {
+    if (fixCandidates.length === 0 || fixing) {
+      return;
+    }
+    if (!window.confirm(`将应用 ${fixCandidates.length} 条排程修复建议（会更新任务截止时间），是否继续？`)) {
+      return;
+    }
+    setFixing(true);
+    setFixNotice("");
+    try {
+      const response = await fetch("/api/schedule/fix", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          fixes: fixCandidates.map((item) => ({
+            type: item.type,
+            taskId: item.taskId,
+            minimumBufferMinutes: item.minimumBufferMinutes,
+          })),
+        }),
+      });
+      const payload = (await response.json()) as { fixedCount?: number; error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "修复失败");
+      }
+      const fixedCount = payload.fixedCount ?? 0;
+      setFixNotice(fixedCount > 0 ? `已自动修复 ${fixedCount} 条冲突任务。` : "未发现可自动修复项。");
+      router.refresh();
+    } catch (error) {
+      setFixNotice(error instanceof Error ? error.message : "修复失败，请稍后重试。");
+    } finally {
+      setFixing(false);
+    }
+  }
+
   return (
     <section className="rounded-[28px] border border-[var(--line)] bg-[linear-gradient(160deg,rgba(255,252,246,0.92),rgba(255,255,255,0.9))] p-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -392,10 +493,25 @@ export function TodayScheduleBoard(props: TodayScheduleBoardProps) {
       </div>
 
       <div className="mt-3 space-y-2">
-        <div className="rounded-xl border border-[var(--line)] bg-white/85 px-3 py-2 text-sm text-[var(--muted)]">
-          <span className="font-medium text-[var(--ink)]">规则审核：</span>
-          {lintIssues.length > 0 ? `发现 ${lintIssues.length} 处可疑安排` : "未发现明显冲突"}
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--line)] bg-white/85 px-3 py-2 text-sm text-[var(--muted)]">
+          <p>
+            <span className="font-medium text-[var(--ink)]">规则审核：</span>
+            {lintIssues.length > 0 ? `发现 ${lintIssues.length} 处可疑安排` : "未发现明显冲突"}
+          </p>
+          {fixCandidates.length > 0 ? (
+            <button
+              className="rounded-full border border-[rgba(178,75,42,0.24)] bg-[rgba(178,75,42,0.1)] px-3 py-1 text-xs text-[var(--accent)] transition hover:bg-[rgba(178,75,42,0.16)] disabled:opacity-60"
+              disabled={fixing}
+              onClick={() => {
+                void handleApplyFixes();
+              }}
+              type="button"
+            >
+              {fixing ? "修复中..." : "应用修复建议"}
+            </button>
+          ) : null}
         </div>
+        {fixNotice ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">{fixNotice}</div> : null}
         {lintIssues.length > 0 ? (
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
             {lintIssues[0]}

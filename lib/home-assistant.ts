@@ -8,6 +8,7 @@ import { getAiRuntimeConfig, getAppSettings } from "@/lib/server/app-settings";
 import {
   createAssistantTask,
   deleteSource,
+  fixAllTaskTimeSemanticConflicts,
   getDashboardData,
   recordTaskProgress,
   restoreTaskAssistantSnapshot,
@@ -41,6 +42,15 @@ export type AssistantClarifyState = {
   taskId?: string | null;
   hour?: number | null;
   minute?: number | null;
+  turns?: number;
+} | {
+  type: "create_task_deadline_time";
+  sourceText: string;
+  dayHint: "today" | "tomorrow";
+  turns?: number;
+} | {
+  type: "create_task_batch_execution_time";
+  courseTitles: string[];
   turns?: number;
 };
 
@@ -81,6 +91,10 @@ const progressActionSchema = z.object({
 const createTaskActionSchema = z.object({
   type: z.literal("create_task"),
   sourceText: z.string().min(1),
+});
+
+const autoFixTimeActionSchema = z.object({
+  type: z.literal("auto_fix_time_semantics"),
 });
 
 const updateTaskCoreActionSchema = z.object({
@@ -124,7 +138,7 @@ const updateTaskCoreActionSchema = z.object({
 
 const assistantResponseSchema = z.object({
   reply: z.string().min(1),
-  actions: z.array(z.union([statusActionSchema, reviewActionSchema, followUpActionSchema, progressActionSchema, createTaskActionSchema, updateTaskCoreActionSchema])).default([]),
+  actions: z.array(z.union([statusActionSchema, reviewActionSchema, followUpActionSchema, progressActionSchema, createTaskActionSchema, autoFixTimeActionSchema, updateTaskCoreActionSchema])).default([]),
 });
 
 type AssistantPlannedAction = z.infer<typeof assistantResponseSchema>["actions"][number];
@@ -333,6 +347,41 @@ function buildTodayArrangementSummary(input: {
   ].join("；");
 }
 
+function extractCourseTitlesFromSummary(summary: string) {
+  if (!summary || summary.includes("今天没有课程")) {
+    return [] as string[];
+  }
+  return summary
+    .split(/[；;]+/)
+    .map((item) => item.trim())
+    .map((item) => {
+      const match = item.match(/\d{2}:\d{2}-\d{2}:\d{2}\s+([^@]+)/);
+      return match?.[1]?.trim() ?? "";
+    })
+    .filter(Boolean);
+}
+
+function parseTaskCountHint(message: string) {
+  const arabic = message.match(/(\d+)\s*个?任务/);
+  if (arabic) {
+    return Math.max(1, Number(arabic[1]));
+  }
+  if (/三个?任务/.test(message)) {
+    return 3;
+  }
+  if (/两个?任务/.test(message)) {
+    return 2;
+  }
+  if (/一个?任务/.test(message)) {
+    return 1;
+  }
+  return null;
+}
+
+function formatClock(hour: number, minute: number) {
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
 function parseClockTimeFromText(text: string) {
   const direct = text.match(/(?:安排到|放到|改到|调到|从)\s*(?:今天|今日|今晚|今夜|明天|明日)?\s*(\d{1,2})(?::|点)(\d{0,2})/);
   if (!direct) {
@@ -353,6 +402,49 @@ function parseClockTimeFromText(text: string) {
     return null;
   }
   return { hour, minute };
+}
+
+function parseAnyClockTime(text: string) {
+  const direct = text.match(/(\d{1,2})(?::|点)(\d{0,2})/);
+  if (direct) {
+    const hour = Number(direct[1]);
+    const minute = direct[2] ? Number(direct[2]) : 0;
+    if (Number.isInteger(hour) && hour >= 0 && hour <= 23 && Number.isInteger(minute) && minute >= 0 && minute <= 59) {
+      return { hour, minute };
+    }
+  }
+  if (/今晚|今夜|晚上/.test(text)) {
+    return { hour: 19, minute: 0 };
+  }
+  if (/明早|明天早上|明天上午|明日上午/.test(text)) {
+    return { hour: 9, minute: 0 };
+  }
+  if (/明晚|明天晚上/.test(text)) {
+    return { hour: 20, minute: 0 };
+  }
+  if (/下午/.test(text)) {
+    return { hour: 15, minute: 0 };
+  }
+  if (/上午|早上/.test(text)) {
+    return { hour: 9, minute: 0 };
+  }
+  const chineseHour = text.match(/([一二三四五六七八九十两]{1,3})点(半)?/);
+  if (chineseHour) {
+    const map: Record<string, number> = {
+      一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 两: 2,
+      十: 10, 十一: 11, 十二: 12,
+    };
+    const raw = chineseHour[1];
+    const hour = map[raw] ?? null;
+    if (hour !== null) {
+      return { hour, minute: chineseHour[2] ? 30 : 0 };
+    }
+  }
+  return null;
+}
+
+function hasExplicitClock(text: string) {
+  return /(\d{1,2}:\d{1,2})|(\d{1,2}点(?:半|[0-5]?\d分?)?)|(\d{1,2}时(?:[0-5]?\d分?)?)|([一二三四五六七八九十两]{1,3}点(?:半)?)/.test(text);
 }
 
 function isArrangementIntent(text: string) {
@@ -507,6 +599,10 @@ function buildLocalSummary(
   tasks: DashboardTask[],
   courseContext?: CourseAssistantContext,
 ) {
+  const looksLikeMutation =
+    /(?:新增|添加|创建|加|记).*(任务|待办)/.test(message) ||
+    /(安排到|排到|标记为|改成|设为|更新|修改|调到|放到)/.test(message);
+
   if (/现在最该做|最紧急|先做什么|该做什么|今天必须推进/.test(message)) {
     if (!currentBestTask) {
       return "当前没有明确需要立刻推进的任务。";
@@ -515,7 +611,7 @@ function buildLocalSummary(
     return `现在最该做的是「${currentBestTask.title}」。截止 ${formatDeadline(currentBestTask.deadline)}，原因是：${currentBestTask.priorityReason}。下一步建议：${currentBestTask.nextActionSuggestion}`;
   }
 
-  if (/待确认|确认队列|需要确认/.test(message)) {
+  if (!looksLikeMutation && /待确认|确认队列|需要确认/.test(message)) {
     if (reviewTasks.length === 0) {
       return "当前没有待确认任务。";
     }
@@ -526,7 +622,7 @@ function buildLocalSummary(
       .join("、")}。`;
   }
 
-  if (/回看|等待任务|等待中/.test(message)) {
+  if (!looksLikeMutation && /回看|等待任务|等待中/.test(message)) {
     const focus = dueWaitingTasks.length > 0 ? dueWaitingTasks : waitingTasks;
     if (focus.length === 0) {
       return "当前没有需要回看的等待任务。";
@@ -564,7 +660,7 @@ function buildLocalSummary(
       .join("、")}。`;
   }
 
-  if (/(今天|今日).*(课表|课程)|课表.*(今天|今日)|今天有什么课/.test(message)) {
+  if (!looksLikeMutation && /(今天|今日).*(课表|课程)|课表.*(今天|今日)|今天有什么课/.test(message)) {
     if (!courseContext) {
       return "当前没有读到课表配置。你可以先在设置里录入课程表。";
     }
@@ -572,14 +668,14 @@ function buildLocalSummary(
     return `今天课程：${courseContext.todayCourseSummary} 可执行空档：${courseContext.todayFreeWindowSummary}。`;
   }
 
-  if (/(空档|空闲|什么时候有空|有空时间)/.test(message)) {
+  if (!looksLikeMutation && /(空档|空闲|什么时候有空|有空时间)/.test(message)) {
     if (!courseContext) {
       return "当前没有读到课表配置，暂时无法按课程计算空档。";
     }
     return `按今日课表，主要空档是：${courseContext.todayFreeWindowSummary}。`;
   }
 
-  if (/(今日日程安排|今天安排|读取安排数据|安排数据|排版数据|今天怎么排)/.test(message)) {
+  if (!looksLikeMutation && /(今日日程安排|今天安排|读取安排数据|安排数据|排版数据|今天怎么排)/.test(message)) {
     if (!courseContext?.todayArrangementSummary) {
       return "当前还没有可读的今日日程安排数据。";
     }
@@ -622,7 +718,7 @@ function getPendingActionTaskIds(action: AssistantPendingAction | null | undefin
 }
 
 function isHighRiskAction(action: AssistantPlannedAction) {
-  return action.type === "update_status" || action.type === "create_task" || action.type === "update_task_core";
+  return action.type === "update_status" || action.type === "create_task" || action.type === "update_task_core" || action.type === "auto_fix_time_semantics";
 }
 
 function buildActionImpact(action: AssistantPlannedAction, taskMap: Map<string, DashboardTask>): AssistantImpactItem {
@@ -631,6 +727,14 @@ function buildActionImpact(action: AssistantPlannedAction, taskMap: Map<string, 
       taskId: "new",
       taskTitle: "新建任务（从对话内容解析）",
       changedFields: ["source", "tasks", "status", "needsHumanReview"],
+    };
+  }
+
+  if (action.type === "auto_fix_time_semantics") {
+    return {
+      taskId: "batch",
+      taskTitle: "批量时间语义修复",
+      changedFields: ["deadline", "deadlineText", "priorityScore"],
     };
   }
 
@@ -681,6 +785,10 @@ function describeAction(action: AssistantPlannedAction, taskMap: Map<string, Das
     return `新增任务：${action.sourceText}`;
   }
 
+  if (action.type === "auto_fix_time_semantics") {
+    return "一键修复时间语义冲突（开始时间晚于截止）";
+  }
+
   const task = taskMap.get(action.taskId);
   const title = task?.title ?? action.taskId;
 
@@ -718,20 +826,19 @@ function reconcileTaskCoreSchedulePatch(
   taskMap: Map<string, DashboardTask>,
 ) {
   const task = taskMap.get(action.taskId);
-  if (!task || action.patch.startAtISO === undefined || action.patch.startAtISO === null) {
+  if (!task) {
     return { action, note: "" };
   }
-
-  const startAt = toTaipei(action.patch.startAtISO);
-  if (!startAt) {
-    return { action, note: "" };
-  }
-
-  const originalDeadline =
+  const resolvedStartAt =
+    action.patch.startAtISO !== undefined
+      ? (action.patch.startAtISO ? toTaipei(action.patch.startAtISO) : null)
+      : toTaipei(task.startAt);
+  const resolvedDeadline =
     action.patch.deadlineISO !== undefined
       ? (action.patch.deadlineISO ? toTaipei(action.patch.deadlineISO) : null)
       : toTaipei(task.deadline);
-  if (!originalDeadline || !startAt.isAfter(originalDeadline)) {
+
+  if (!resolvedStartAt || !resolvedDeadline || !resolvedStartAt.isAfter(resolvedDeadline)) {
     return { action, note: "" };
   }
 
@@ -744,7 +851,8 @@ function reconcileTaskCoreSchedulePatch(
     }
     return 60;
   })();
-  const adjustedDeadline = startAt.add(Math.max(20, estimateMinutes), "minute");
+  const adjustedDeadline = resolvedStartAt.add(Math.max(20, estimateMinutes), "minute");
+  const deadlineSource = action.patch.deadlineISO !== undefined ? "本次设置的截止时间" : "原截止时间";
 
   return {
     action: {
@@ -754,7 +862,7 @@ function reconcileTaskCoreSchedulePatch(
         deadlineISO: adjustedDeadline.toISOString(),
       },
     },
-    note: `「${task.title}」开始时间晚于原截止时间，已联动将截止顺延至 ${adjustedDeadline.format("M月D日 HH:mm")}。`,
+    note: `「${task.title}」开始时间晚于${deadlineSource}，已联动将截止顺延至 ${adjustedDeadline.format("M月D日 HH:mm")}。`,
   };
 }
 
@@ -811,6 +919,7 @@ function buildLocalPlan(input: {
 } | null {
   const { message, tasks, currentBestTask, topTasksForToday, reviewTasks, waitingTasks, dueWaitingTasks, courseContext, context, policy } = input;
   const taskMap = new Map(tasks.map((task) => [task.id, task]));
+  const resolveReviewIntent = /解析没问题|确认解析|确认无误|退出待确认/.test(message);
 
   if (context?.pendingAction) {
     if (/^(确认|确认执行|是的|是|好的|好|行|可以|就这样|执行)$/u.test(message)) {
@@ -842,7 +951,79 @@ function buildLocalPlan(input: {
     };
   }
 
-  const summaryReply = buildLocalSummary(message, currentBestTask, topTasksForToday, reviewTasks, waitingTasks, dueWaitingTasks, tasks, courseContext);
+  if (
+    /(新增|添加|创建|加).*(任务|待办)/.test(message) &&
+    (/(今天|今日).*(课程)|课程.*(今天|今日)|三个课程|3个课程/.test(message)) &&
+    /(每周三|周三|星期三)/.test(message)
+  ) {
+    const courseTitles = extractCourseTitlesFromSummary(courseContext?.todayCourseSummary ?? "");
+    if (courseTitles.length === 0) {
+      return {
+        reply: "我知道你想按今日课程批量建任务，但当前没读到今天课程。请先确认课表配置。",
+        actions: [],
+        referencedTaskIds: [],
+        pendingAction: null,
+      };
+    }
+    const countHint = parseTaskCountHint(message);
+    const pickedTitles = (countHint ? courseTitles.slice(0, countHint) : courseTitles).slice(0, 6);
+    const parsedClock = parseAnyClockTime(message);
+    if (!parsedClock) {
+      return {
+        reply: "可以，我会按今日课程创建每周三复习任务。先补一个执行时刻（如 20:00）？",
+        actions: [],
+        referencedTaskIds: [],
+        pendingAction: null,
+        clarifyState: {
+          type: "create_task_batch_execution_time",
+          courseTitles: pickedTitles,
+          turns: 1,
+        },
+      };
+    }
+    const sourceText = pickedTitles.map((title) => `每周三${formatClock(parsedClock.hour, parsedClock.minute)}复习${title}`).join("；");
+    const pendingAction = buildPendingActionBundle([{ type: "create_task", sourceText }], taskMap);
+    return {
+      reply: pendingAction.previewText,
+      actions: [],
+      referencedTaskIds: [],
+      pendingAction,
+      clarifyState: null,
+    };
+  }
+
+  const createMatch = message.match(/^(?:帮我)?(?:加一个|新增|添加|创建|记一个)(?:任务|待办)?[：:\s]+(.+)$/);
+  if (createMatch?.[1]) {
+    const sourceText = createMatch[1].trim();
+    const hasRelativeDay = /(今天|今日|明天|明日)/.test(sourceText);
+    if (hasRelativeDay && !hasExplicitClock(sourceText)) {
+      const dayHint: "today" | "tomorrow" = /(明天|明日)/.test(sourceText) ? "tomorrow" : "today";
+      return {
+        reply: `这条任务提到了${dayHint === "tomorrow" ? "明天" : "今天"}，但没写具体截止时刻。要不要补一个时间（如 ${dayHint === "tomorrow" ? "明天20:00" : "今天20:00"}）？`,
+        actions: [],
+        referencedTaskIds: [],
+        pendingAction: null,
+        clarifyState: {
+          type: "create_task_deadline_time",
+          sourceText,
+          dayHint,
+          turns: 1,
+        },
+      };
+    }
+    const pendingAction = buildPendingActionBundle([{ type: "create_task", sourceText }], taskMap);
+    return {
+      reply: pendingAction.previewText,
+      actions: [],
+      referencedTaskIds: [],
+      pendingAction,
+      clarifyState: null,
+    };
+  }
+
+  const summaryReply = resolveReviewIntent
+    ? null
+    : buildLocalSummary(message, currentBestTask, topTasksForToday, reviewTasks, waitingTasks, dueWaitingTasks, tasks, courseContext);
   if (summaryReply) {
     return {
       reply: summaryReply,
@@ -868,6 +1049,142 @@ function buildLocalPlan(input: {
     ((statusKeywordMap.find((item) => item.pattern.test(message)) && policy.autoSelectCurrentBestTaskOnStatus) ? currentBestTask : null);
   const task = inferredTask;
   const parsedTime = parseClockTimeFromText(message);
+
+  if (/(一键修复|自动修复).*(时间|截止|排程).*(冲突|问题)?/.test(message)) {
+    const pendingAction = buildPendingActionBundle([{ type: "auto_fix_time_semantics" }], taskMap);
+    return {
+      reply: pendingAction.previewText,
+      actions: [],
+      referencedTaskIds: [],
+      pendingAction,
+      clarifyState: null,
+    };
+  }
+
+  if (context?.clarifyState?.type === "create_task_deadline_time") {
+    if (/^(取消|不用了|先不了|算了)$/u.test(message)) {
+      return {
+        reply: "好的，这次新增任务已取消。",
+        actions: [],
+        referencedTaskIds: [],
+        pendingAction: null,
+        clarifyState: null,
+      };
+    }
+
+    const currentTurns = context.clarifyState.turns ?? 0;
+    if (/(推荐|建议|什么时候|几点|哪个时间)/.test(message) && !parseAnyClockTime(message)) {
+      const dayLabel = context.clarifyState.dayHint === "tomorrow" ? "明天" : "今天";
+      return {
+        reply: `建议先用${dayLabel} 20:00，通常不压白天执行窗口。你也可以直接回复具体时刻（如“19:30”）。`,
+        actions: [],
+        referencedTaskIds: [],
+        pendingAction: null,
+        clarifyState: {
+          ...context.clarifyState,
+          turns: currentTurns + 1,
+        },
+      };
+    }
+    const parsedClock = parseAnyClockTime(message);
+    if (parsedClock) {
+      const dayLabel = context.clarifyState.dayHint === "tomorrow" ? "明天" : "今天";
+      const clockLabel = `${String(parsedClock.hour).padStart(2, "0")}:${String(parsedClock.minute).padStart(2, "0")}`;
+      const sourceText = `${context.clarifyState.sourceText}（截止${dayLabel}${clockLabel}）`;
+      const pendingAction = buildPendingActionBundle([{ type: "create_task", sourceText }], taskMap);
+      return {
+        reply: pendingAction.previewText,
+        actions: [],
+        referencedTaskIds: [],
+        pendingAction,
+        clarifyState: null,
+      };
+    }
+
+    if (/默认|按默认|就这样|不用补|不设置/.test(message) || currentTurns >= policy.maxClarifyTurns) {
+      const pendingAction = buildPendingActionBundle([{ type: "create_task", sourceText: context.clarifyState.sourceText }], taskMap);
+      return {
+        reply: pendingAction.previewText,
+        actions: [],
+        referencedTaskIds: [],
+        pendingAction,
+        clarifyState: null,
+      };
+    }
+
+    return {
+      reply: "这条新增任务还缺具体截止时刻。你可以回复如“20:30”，或回复“默认”跳过。",
+      actions: [],
+      referencedTaskIds: [],
+      pendingAction: null,
+      clarifyState: {
+        ...context.clarifyState,
+        turns: currentTurns + 1,
+      },
+    };
+  }
+
+  if (context?.clarifyState?.type === "create_task_batch_execution_time") {
+    if (/^(取消|不用了|先不了|算了)$/u.test(message)) {
+      return {
+        reply: "好的，这次批量新增已取消。",
+        actions: [],
+        referencedTaskIds: [],
+        pendingAction: null,
+        clarifyState: null,
+      };
+    }
+
+    const currentTurns = context.clarifyState.turns ?? 0;
+    if (/(推荐|建议|什么时候|几点|哪个时间)/.test(message)) {
+      return {
+        reply: "建议设在每周三 19:00 或 20:00。若你晚课后状态更好，优先 20:00。你定一个我再生成确认预览。",
+        actions: [],
+        referencedTaskIds: [],
+        pendingAction: null,
+        clarifyState: {
+          ...context.clarifyState,
+          turns: currentTurns + 1,
+        },
+      };
+    }
+    const parsedClock = parseAnyClockTime(message);
+    if (parsedClock) {
+      const clock = formatClock(parsedClock.hour, parsedClock.minute);
+      const sourceText = context.clarifyState.courseTitles.map((title) => `每周三${clock}复习${title}`).join("；");
+      const pendingAction = buildPendingActionBundle([{ type: "create_task", sourceText }], taskMap);
+      return {
+        reply: pendingAction.previewText,
+        actions: [],
+        referencedTaskIds: [],
+        pendingAction,
+        clarifyState: null,
+      };
+    }
+
+    if (/默认|按默认|就这样|不用补/.test(message) || currentTurns >= policy.maxClarifyTurns) {
+      const sourceText = context.clarifyState.courseTitles.map((title) => `每周三复习${title}`).join("；");
+      const pendingAction = buildPendingActionBundle([{ type: "create_task", sourceText }], taskMap);
+      return {
+        reply: pendingAction.previewText,
+        actions: [],
+        referencedTaskIds: [],
+        pendingAction,
+        clarifyState: null,
+      };
+    }
+
+    return {
+      reply: "请补一个每周三执行时刻（如 20:00），或回复“默认”。",
+      actions: [],
+      referencedTaskIds: [],
+      pendingAction: null,
+      clarifyState: {
+        ...context.clarifyState,
+        turns: currentTurns + 1,
+      },
+    };
+  }
 
   if (context?.clarifyState?.type === "arrange_task_time") {
     if (/^(取消|不用了|先不了|算了)$/u.test(message)) {
@@ -961,20 +1278,7 @@ function buildLocalPlan(input: {
     };
   }
 
-  const createMatch = message.match(/^(?:帮我)?(?:加一个|新增|添加|创建|记一个)(?:任务|待办)?[：:\s]+(.+)$/);
-
-  if (createMatch?.[1]) {
-    const sourceText = createMatch[1].trim();
-    const pendingAction = buildPendingActionBundle([{ type: "create_task", sourceText }], taskMap);
-    return {
-      reply: pendingAction.previewText,
-      actions: [],
-      referencedTaskIds: [],
-      pendingAction,
-    };
-  }
-
-  if (/解析没问题|确认解析|确认无误|退出待确认/.test(message)) {
+  if (resolveReviewIntent) {
     if (!task) {
       return {
         reply: "我知道你想确认解析结果，但还没定位到具体任务。请补一句任务标题。",
@@ -1184,7 +1488,8 @@ actions 仅允许以下类型：
 3. {"type":"schedule_follow_up","taskId":"...","preset":"tonight|tomorrow|next_week","note":"可选"}
 4. {"type":"record_progress","taskId":"...","mode":"increment|decrement|reset"}
 5. {"type":"create_task","sourceText":"用户要新增的任务原文"}
-6. {"type":"update_task_core","taskId":"...","patch":{"可编辑字段": "值"}}
+6. {"type":"auto_fix_time_semantics"}
+7. {"type":"update_task_core","taskId":"...","patch":{"可编辑字段": "值"}}
 
 规则：
 1. 只有当用户明确要求修改任务时，才能填写 actions。
@@ -1193,6 +1498,7 @@ actions 仅允许以下类型：
 2. 如果任务不明确、可能有歧义、或你拿不准 taskId，就不要执行动作，只在 reply 里要求用户澄清。
 2.1 你可以参考今日课表与空档给出建议，但课表问题本身不应触发 actions。
 2.2 若用户要求“调整今日日程安排”，优先使用 update_task_core 修改 startAtISO、estimatedMinutes、snoozeUntilISO、status 等字段。
+2.3 任何涉及 startAtISO/deadlineISO 的调整，都要确保开始时间不晚于截止时间；若用户明确要改到更晚时间，应一并给出截止顺延方案。
 3. 永远不要编造 taskId。
 4. 不要输出任何 JSON 之外的说明。
 5. 语气直接、简洁、会做事。
@@ -1322,6 +1628,17 @@ async function executeAction(action: AssistantPlannedAction, taskMap: Map<string
         sourceId: created.source.id,
         sourceLabel: created.source.title || "首页 AI 助手",
       },
+    };
+  }
+
+  if (action.type === "auto_fix_time_semantics") {
+    const fixed = await fixAllTaskTimeSemanticConflicts({ minimumBufferMinutes: 20, limit: 200 });
+    return {
+      taskIds: fixed.results.map((item) => item.taskId),
+      taskTitle: "批量时间语义修复",
+      summary: fixed.fixedCount > 0 ? `已自动修复 ${fixed.fixedCount} 条时间冲突任务` : "未发现可自动修复的时间冲突任务",
+      createdTaskCards: [],
+      impact: buildActionImpact(action, taskMap),
     };
   }
 

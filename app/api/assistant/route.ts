@@ -31,6 +31,9 @@ const plannedActionSchema = z.union([
     sourceText: z.string(),
   }),
   z.object({
+    type: z.literal("auto_fix_time_semantics"),
+  }),
+  z.object({
     type: z.literal("update_task_core"),
     taskId: z.string(),
     patch: z.record(z.string(), z.any()),
@@ -90,13 +93,26 @@ const historyItemSchema = z.object({
   content: z.string(),
 });
 
-const clarifyStateSchema = z.object({
-  type: z.literal("arrange_task_time"),
-  taskId: z.string().nullable().optional(),
-  hour: z.number().int().min(0).max(23).nullable().optional(),
-  minute: z.number().int().min(0).max(59).nullable().optional(),
-  turns: z.number().int().min(0).max(5).optional(),
-});
+const clarifyStateSchema = z.union([
+  z.object({
+    type: z.literal("arrange_task_time"),
+    taskId: z.string().nullable().optional(),
+    hour: z.number().int().min(0).max(23).nullable().optional(),
+    minute: z.number().int().min(0).max(59).nullable().optional(),
+    turns: z.number().int().min(0).max(5).optional(),
+  }),
+  z.object({
+    type: z.literal("create_task_deadline_time"),
+    sourceText: z.string().min(1),
+    dayHint: z.enum(["today", "tomorrow"]),
+    turns: z.number().int().min(0).max(5).optional(),
+  }),
+  z.object({
+    type: z.literal("create_task_batch_execution_time"),
+    courseTitles: z.array(z.string().min(1)).min(1).max(8),
+    turns: z.number().int().min(0).max(5).optional(),
+  }),
+]);
 
 const requestSchema = z.object({
   message: z.string().min(1),

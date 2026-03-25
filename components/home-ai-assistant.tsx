@@ -53,6 +53,9 @@ type PlannedAction =
       sourceText: string;
     }
   | {
+      type: "auto_fix_time_semantics";
+    }
+  | {
       type: "update_task_core";
       taskId: string;
       patch: Record<string, unknown>;
@@ -107,6 +110,15 @@ type ClarifyState = {
   taskId?: string | null;
   hour?: number | null;
   minute?: number | null;
+  turns?: number;
+} | {
+  type: "create_task_deadline_time";
+  sourceText: string;
+  dayHint: "today" | "tomorrow";
+  turns?: number;
+} | {
+  type: "create_task_batch_execution_time";
+  courseTitles: string[];
   turns?: number;
 };
 

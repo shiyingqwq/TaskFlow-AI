@@ -19,7 +19,7 @@ import { getBlockingPredecessorTitles, getDisplayTaskStatus, isTaskBlockedByPred
 import { inferConfirmedTaskStatus, inferTaskStatus, normalizeSubmittedStatus } from "@/lib/task-status";
 import { resolveRecalculatedStatus } from "@/lib/task-status";
 import { buildTodayBuckets } from "@/lib/today-view";
-import { buildDeadlineAuditRecord, normalizeDeadlineInput } from "@/lib/time";
+import { buildDeadlineAuditRecord, normalizeDeadlineInput, nowInTaipei } from "@/lib/time";
 import { normalizeWaitingReasonInput, resolveWaitingFollowUpPreset, type WaitingFollowUpPreset } from "@/lib/waiting";
 
 function isDatabaseNotReadyError(error: unknown) {
@@ -511,6 +511,49 @@ function buildAssistantFallbackTask(rawText: string): ExtractedTaskInput {
   };
 }
 
+function hasExplicitClockExpression(text: string | null | undefined) {
+  if (!text) {
+    return false;
+  }
+  return /(\d{1,2}:\d{2})|(\d{1,2}点(?:半|[0-5]?\d分?)?)|(\d{1,2}时(?:[0-5]?\d分?)?)/.test(text);
+}
+
+function shouldRelaxAssistantRelativeDeadline(taskInput: CreationTaskInput) {
+  const deadlineText = taskInput.deadlineText?.trim() ?? "";
+  if (!deadlineText) {
+    return false;
+  }
+  if (!/(今天|今日|明天|明日)/.test(deadlineText)) {
+    return false;
+  }
+  if (hasExplicitClockExpression(deadlineText)) {
+    return false;
+  }
+  const taskText = `${taskInput.title} ${taskInput.description} ${taskInput.nextActionSuggestion}`.replace(/\s+/g, "");
+  return /(复习|回顾|复盘|学习|整理笔记|看课件)/.test(taskText);
+}
+
+function hasRawDeadlineCue(text: string) {
+  return /(截止|之前|前|今晚|今天|今日|明天|明日|本周内|\d{1,2}:\d{2}|\d{1,2}点(?:半|[0-5]?\d分?)?)/.test(text);
+}
+
+function hasHardDeadlineCue(text: string) {
+  return /(截止|之前|前完成|前提交|前上交|到期|ddl)/i.test(text);
+}
+
+function extractWeeklyExecutionClockFromSource(text: string) {
+  const match = text.match(/每周[一二三四五六日天]\s*(\d{1,2})(?::(\d{2}))?/);
+  if (!match) {
+    return null;
+  }
+  const hour = Number(match[1]);
+  const minute = match[2] ? Number(match[2]) : 0;
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23 || !Number.isInteger(minute) || minute < 0 || minute > 59) {
+    return null;
+  }
+  return { hour, minute };
+}
+
 export function inferWeeklyRecurrenceDaysFromText(text: string) {
   const normalized = text.replace(/\s+/g, "");
   if (!/(每周|每星期|每礼拜|每逢)/.test(normalized)) {
@@ -1000,6 +1043,9 @@ export async function createAssistantTask(rawText: string, activeIdentities: str
     throw new Error("Assistant task text is empty");
   }
   const weeklyRecurrenceDays = inferWeeklyRecurrenceDaysFromText(compact);
+  const weeklyExecutionClock = extractWeeklyExecutionClockFromSource(compact);
+  const rawHasDeadlineCue = hasRawDeadlineCue(compact);
+  const rawHasHardDeadlineCue = hasHardDeadlineCue(compact);
 
   const parsedInput: ParsedSourceInput = {
     type: "text",
@@ -1033,7 +1079,36 @@ export async function createAssistantTask(rawText: string, activeIdentities: str
       dependencies: parsed.tasks.length > 0 ? parsed.dependencies : [],
     },
     taskInputs.map((taskInput) => {
-      const normalizedTaskInput = applyAssistantRecurrenceHint(taskInput, weeklyRecurrenceDays);
+      let normalizedTaskInput = applyAssistantRecurrenceHint(taskInput, weeklyRecurrenceDays);
+      if (shouldRelaxAssistantRelativeDeadline(normalizedTaskInput)) {
+        normalizedTaskInput = {
+          ...normalizedTaskInput,
+          deadlineISO: null,
+          deadlineText: null,
+        };
+      }
+      if (normalizedTaskInput.recurrenceType === "weekly" && !rawHasDeadlineCue) {
+        normalizedTaskInput = {
+          ...normalizedTaskInput,
+          deadlineISO: null,
+          deadlineText: null,
+        };
+      }
+      if (normalizedTaskInput.recurrenceType === "weekly" && weeklyExecutionClock && !rawHasHardDeadlineCue) {
+        const startAtISO = nowInTaipei()
+          .hour(weeklyExecutionClock.hour)
+          .minute(weeklyExecutionClock.minute)
+          .second(0)
+          .millisecond(0)
+          .toISOString();
+        normalizedTaskInput = {
+          ...normalizedTaskInput,
+          startAtISO,
+          recurrenceStartISO: normalizedTaskInput.recurrenceStartISO ?? startAtISO,
+          deadlineISO: null,
+          deadlineText: null,
+        };
+      }
       return {
       ...normalizedTaskInput,
       status: inferTaskStatus({
@@ -1161,6 +1236,154 @@ export async function updateTaskCore(taskId: string, data: TaskCoreUpdateInput) 
 
   await recalculateAllPriorities({ taskIds: [taskId] });
   return task;
+}
+
+function coerceRecurrenceDays(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [] as number[];
+  }
+  return value
+    .map((item) => Number(item))
+    .filter((item) => Number.isInteger(item) && item >= 0 && item <= 6);
+}
+
+function coerceStringArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [] as string[];
+  }
+  return value.map((item) => String(item)).filter(Boolean);
+}
+
+function buildTaskCoreUpdateFromExisting(task: Task): TaskCoreUpdateInput {
+  return {
+    title: task.title,
+    description: task.description,
+    startAt: task.startAt,
+    submitTo: task.submitTo,
+    submitChannel: task.submitChannel,
+    applicableIdentities: coerceStringArray(task.applicableIdentities),
+    identityHint: task.identityHint,
+    recurrenceType: task.recurrenceType,
+    recurrenceDays: coerceRecurrenceDays(task.recurrenceDays),
+    recurrenceTargetCount: task.recurrenceTargetCount,
+    recurrenceLimit: task.recurrenceLimit,
+    recurrenceStartAt: task.recurrenceStartAt,
+    recurrenceUntil: task.recurrenceUntil,
+    recurrenceMaxOccurrences: task.recurrenceMaxOccurrences,
+    deadlineText: task.deadlineText,
+    deadline: task.deadline,
+    timezone: task.timezone || "Asia/Shanghai",
+    snoozeUntil: task.snoozeUntil,
+    deliveryType: task.deliveryType,
+    requiresSignature: task.requiresSignature,
+    requiresStamp: task.requiresStamp,
+    waitingFor: task.waitingFor,
+    waitingReasonType: task.waitingReasonType,
+    waitingReasonText: task.waitingReasonText,
+    nextCheckAt: task.nextCheckAt,
+    nextActionSuggestion: task.nextActionSuggestion,
+    estimatedMinutes: task.estimatedMinutes,
+    status: task.status,
+    materials: coerceStringArray(task.materials),
+    taskType: task.taskType,
+    dependsOnExternal: task.dependsOnExternal,
+  };
+}
+
+export async function fixTaskStartDeadlineConflict(taskId: string, minimumBufferMinutes = 20) {
+  await sanitizeTaskJsonColumns();
+  const existing = await prisma.task.findUnique({
+    where: { id: taskId },
+  });
+
+  if (!existing) {
+    throw new Error(`Task ${taskId} not found`);
+  }
+
+  const startAt = normalizeDateOrNull(existing.startAt);
+  const deadline = normalizeDateOrNull(existing.deadline);
+  if (!startAt || !deadline || startAt.getTime() <= deadline.getTime()) {
+    return {
+      fixed: false,
+      taskId: existing.id,
+      title: existing.title,
+      previousDeadlineISO: existing.deadline ? new Date(existing.deadline).toISOString() : null,
+      nextDeadlineISO: existing.deadline ? new Date(existing.deadline).toISOString() : null,
+    };
+  }
+
+  const estimateMinutes =
+    typeof existing.estimatedMinutes === "number" && existing.estimatedMinutes >= 10 && existing.estimatedMinutes <= 480
+      ? existing.estimatedMinutes
+      : 60;
+  const bufferMinutes = Math.max(minimumBufferMinutes, estimateMinutes);
+  const nextDeadline = new Date(startAt.getTime() + bufferMinutes * 60_000);
+  const updateInput = buildTaskCoreUpdateFromExisting(existing);
+  updateInput.deadline = nextDeadline;
+  // 避免旧的 deadlineText（如“今天18:00”）在归一化阶段把新截止覆盖回去。
+  updateInput.deadlineText = null;
+
+  await updateTaskCore(taskId, updateInput);
+
+  return {
+    fixed: true,
+    taskId: existing.id,
+    title: existing.title,
+    previousDeadlineISO: deadline.toISOString(),
+    nextDeadlineISO: nextDeadline.toISOString(),
+  };
+}
+
+export async function fixAllTaskTimeSemanticConflicts(options?: {
+  minimumBufferMinutes?: number;
+  limit?: number;
+}) {
+  await sanitizeTaskJsonColumns();
+  const minimumBufferMinutes = options?.minimumBufferMinutes ?? 20;
+  const limit = options?.limit ?? 200;
+
+  const candidates = await prisma.task.findMany({
+    where: {
+      startAt: {
+        not: null,
+      },
+      deadline: {
+        not: null,
+      },
+      status: {
+        notIn: ["done", "submitted", "ignored"],
+      },
+    },
+    orderBy: {
+      updatedAt: "desc",
+    },
+    take: limit,
+    select: {
+      id: true,
+      title: true,
+      startAt: true,
+      deadline: true,
+    },
+  });
+
+  const conflicted = candidates.filter((task) => {
+    const startAt = normalizeDateOrNull(task.startAt);
+    const deadline = normalizeDateOrNull(task.deadline);
+    return Boolean(startAt && deadline && startAt.getTime() > deadline.getTime());
+  });
+
+  const results = [];
+  for (const task of conflicted) {
+    const result = await fixTaskStartDeadlineConflict(task.id, minimumBufferMinutes);
+    results.push(result);
+  }
+
+  return {
+    checkedCount: candidates.length,
+    conflictCount: conflicted.length,
+    fixedCount: results.filter((item) => item.fixed).length,
+    results,
+  };
 }
 
 export async function updateTaskStatus(taskId: string, status: TaskStatus, note?: string) {

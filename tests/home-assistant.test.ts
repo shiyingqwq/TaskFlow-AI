@@ -451,4 +451,143 @@ describe("home assistant local planner", () => {
     });
     expect(result?.clarifyState).toBeNull();
   });
+
+  it("asks for deadline time when creating a task with relative day but no explicit clock", () => {
+    const task = createTask();
+    const result = resolveLocalAssistantPlanForTest({
+      message: "新增任务：复习今日心理学课程",
+      tasks: [task],
+      currentBestTask: task,
+      topTasksForToday: [task],
+      reviewTasks: [],
+      waitingTasks: [],
+      dueWaitingTasks: [],
+    });
+
+    expect(result?.actions).toEqual([]);
+    expect(result?.pendingAction).toBeNull();
+    expect(result?.reply).toContain("没写具体截止时刻");
+    expect(result?.clarifyState).toMatchObject({
+      type: "create_task_deadline_time",
+      sourceText: "复习今日心理学课程",
+      dayHint: "today",
+    });
+  });
+
+  it("creates task after deadline-time clarification for create flow", () => {
+    const task = createTask();
+    const result = resolveLocalAssistantPlanForTest({
+      message: "20:00",
+      tasks: [task],
+      currentBestTask: task,
+      topTasksForToday: [task],
+      reviewTasks: [],
+      waitingTasks: [],
+      dueWaitingTasks: [],
+      context: {
+        clarifyState: {
+          type: "create_task_deadline_time",
+          sourceText: "复习今日心理学课程",
+          dayHint: "today",
+          turns: 1,
+        },
+      },
+    });
+
+    expect(result?.actions).toEqual([]);
+    expect(result?.pendingAction).toMatchObject({
+      type: "confirm_actions",
+      actions: [
+        {
+          type: "create_task",
+          sourceText: "复习今日心理学课程（截止今天20:00）",
+        },
+      ],
+    });
+    expect(result?.clarifyState).toBeNull();
+  });
+
+  it("creates multiple weekly course-review tasks from today's courses by one command", () => {
+    const task = createTask();
+    const result = resolveLocalAssistantPlanForTest({
+      message: "帮我添加3个任务，复习今日三个课程，每周三执行",
+      tasks: [task],
+      currentBestTask: task,
+      topTasksForToday: [task],
+      reviewTasks: [],
+      waitingTasks: [],
+      dueWaitingTasks: [],
+      courseContext: {
+        todayCourseSummary: "08:00-09:30 核医学@1阶；09:40-11:10 医学心理学@1阶；14:30-16:50 卫生学@1阶",
+        todayFreeWindowSummary: "11:10-14:30，16:50-21:30",
+      },
+    });
+
+    expect(result?.actions).toEqual([]);
+    expect(result?.pendingAction).toBeNull();
+    expect(result?.reply).toContain("先补一个执行时刻");
+    expect(result?.clarifyState).toMatchObject({
+      type: "create_task_batch_execution_time",
+      courseTitles: ["核医学", "医学心理学", "卫生学"],
+    });
+  });
+
+  it("creates weekly course-review tasks after batch-time clarification", () => {
+    const task = createTask();
+    const result = resolveLocalAssistantPlanForTest({
+      message: "20:00",
+      tasks: [task],
+      currentBestTask: task,
+      topTasksForToday: [task],
+      reviewTasks: [],
+      waitingTasks: [],
+      dueWaitingTasks: [],
+      context: {
+        clarifyState: {
+          type: "create_task_batch_execution_time",
+          courseTitles: ["核医学", "医学心理学", "卫生学"],
+          turns: 1,
+        },
+      },
+    });
+
+    expect(result?.actions).toEqual([]);
+    expect(result?.pendingAction).toMatchObject({
+      type: "confirm_actions",
+      actions: [
+        {
+          type: "create_task",
+          sourceText: "每周三20:00复习核医学；每周三20:00复习医学心理学；每周三20:00复习卫生学",
+        },
+      ],
+    });
+  });
+
+  it("answers recommendation question during batch-time clarification without creating pending action", () => {
+    const task = createTask();
+    const result = resolveLocalAssistantPlanForTest({
+      message: "我习惯晚上复习，你推荐什么时候",
+      tasks: [task],
+      currentBestTask: task,
+      topTasksForToday: [task],
+      reviewTasks: [],
+      waitingTasks: [],
+      dueWaitingTasks: [],
+      context: {
+        clarifyState: {
+          type: "create_task_batch_execution_time",
+          courseTitles: ["核医学", "医学心理学", "卫生学"],
+          turns: 1,
+        },
+      },
+    });
+
+    expect(result?.actions).toEqual([]);
+    expect(result?.pendingAction).toBeNull();
+    expect(result?.reply).toContain("建议设在每周三");
+    expect(result?.clarifyState).toMatchObject({
+      type: "create_task_batch_execution_time",
+      turns: 2,
+    });
+  });
 });
