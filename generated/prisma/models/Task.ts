@@ -29,6 +29,7 @@ export type AggregateTask = {
 export type TaskAvgAggregateOutputType = {
   recurrenceTargetCount: number | null
   recurrenceLimit: number | null
+  recurrenceMaxOccurrences: number | null
   deadlineInferenceConfidence: number | null
   confidence: number | null
   estimatedMinutes: number | null
@@ -38,6 +39,7 @@ export type TaskAvgAggregateOutputType = {
 export type TaskSumAggregateOutputType = {
   recurrenceTargetCount: number | null
   recurrenceLimit: number | null
+  recurrenceMaxOccurrences: number | null
   deadlineInferenceConfidence: number | null
   confidence: number | null
   estimatedMinutes: number | null
@@ -50,11 +52,17 @@ export type TaskMinAggregateOutputType = {
   title: string | null
   description: string | null
   taskType: $Enums.TaskType | null
+  startAt: Date | null
   recurrenceType: string | null
   recurrenceTargetCount: number | null
   recurrenceLimit: number | null
+  recurrenceStartAt: Date | null
+  recurrenceUntil: Date | null
+  recurrenceMaxOccurrences: number | null
   deadline: Date | null
   deadlineText: string | null
+  timezone: string | null
+  snoozeUntil: Date | null
   submitTo: string | null
   submitChannel: string | null
   identityHint: string | null
@@ -79,6 +87,7 @@ export type TaskMinAggregateOutputType = {
   evidenceSnippet: string | null
   nextActionSuggestion: string | null
   estimatedMinutes: number | null
+  completedAt: Date | null
   priorityScore: number | null
   priorityReason: string | null
   createdAt: Date | null
@@ -91,11 +100,17 @@ export type TaskMaxAggregateOutputType = {
   title: string | null
   description: string | null
   taskType: $Enums.TaskType | null
+  startAt: Date | null
   recurrenceType: string | null
   recurrenceTargetCount: number | null
   recurrenceLimit: number | null
+  recurrenceStartAt: Date | null
+  recurrenceUntil: Date | null
+  recurrenceMaxOccurrences: number | null
   deadline: Date | null
   deadlineText: string | null
+  timezone: string | null
+  snoozeUntil: Date | null
   submitTo: string | null
   submitChannel: string | null
   identityHint: string | null
@@ -120,6 +135,7 @@ export type TaskMaxAggregateOutputType = {
   evidenceSnippet: string | null
   nextActionSuggestion: string | null
   estimatedMinutes: number | null
+  completedAt: Date | null
   priorityScore: number | null
   priorityReason: string | null
   createdAt: Date | null
@@ -132,12 +148,18 @@ export type TaskCountAggregateOutputType = {
   title: number
   description: number
   taskType: number
+  startAt: number
   recurrenceType: number
   recurrenceDays: number
   recurrenceTargetCount: number
   recurrenceLimit: number
+  recurrenceStartAt: number
+  recurrenceUntil: number
+  recurrenceMaxOccurrences: number
   deadline: number
   deadlineText: number
+  timezone: number
+  snoozeUntil: number
   submitTo: number
   submitChannel: number
   applicableIdentities: number
@@ -165,6 +187,7 @@ export type TaskCountAggregateOutputType = {
   evidenceSnippet: number
   nextActionSuggestion: number
   estimatedMinutes: number
+  completedAt: number
   priorityScore: number
   priorityReason: number
   createdAt: number
@@ -176,6 +199,7 @@ export type TaskCountAggregateOutputType = {
 export type TaskAvgAggregateInputType = {
   recurrenceTargetCount?: true
   recurrenceLimit?: true
+  recurrenceMaxOccurrences?: true
   deadlineInferenceConfidence?: true
   confidence?: true
   estimatedMinutes?: true
@@ -185,6 +209,7 @@ export type TaskAvgAggregateInputType = {
 export type TaskSumAggregateInputType = {
   recurrenceTargetCount?: true
   recurrenceLimit?: true
+  recurrenceMaxOccurrences?: true
   deadlineInferenceConfidence?: true
   confidence?: true
   estimatedMinutes?: true
@@ -197,11 +222,17 @@ export type TaskMinAggregateInputType = {
   title?: true
   description?: true
   taskType?: true
+  startAt?: true
   recurrenceType?: true
   recurrenceTargetCount?: true
   recurrenceLimit?: true
+  recurrenceStartAt?: true
+  recurrenceUntil?: true
+  recurrenceMaxOccurrences?: true
   deadline?: true
   deadlineText?: true
+  timezone?: true
+  snoozeUntil?: true
   submitTo?: true
   submitChannel?: true
   identityHint?: true
@@ -226,6 +257,7 @@ export type TaskMinAggregateInputType = {
   evidenceSnippet?: true
   nextActionSuggestion?: true
   estimatedMinutes?: true
+  completedAt?: true
   priorityScore?: true
   priorityReason?: true
   createdAt?: true
@@ -238,11 +270,17 @@ export type TaskMaxAggregateInputType = {
   title?: true
   description?: true
   taskType?: true
+  startAt?: true
   recurrenceType?: true
   recurrenceTargetCount?: true
   recurrenceLimit?: true
+  recurrenceStartAt?: true
+  recurrenceUntil?: true
+  recurrenceMaxOccurrences?: true
   deadline?: true
   deadlineText?: true
+  timezone?: true
+  snoozeUntil?: true
   submitTo?: true
   submitChannel?: true
   identityHint?: true
@@ -267,6 +305,7 @@ export type TaskMaxAggregateInputType = {
   evidenceSnippet?: true
   nextActionSuggestion?: true
   estimatedMinutes?: true
+  completedAt?: true
   priorityScore?: true
   priorityReason?: true
   createdAt?: true
@@ -279,12 +318,18 @@ export type TaskCountAggregateInputType = {
   title?: true
   description?: true
   taskType?: true
+  startAt?: true
   recurrenceType?: true
   recurrenceDays?: true
   recurrenceTargetCount?: true
   recurrenceLimit?: true
+  recurrenceStartAt?: true
+  recurrenceUntil?: true
+  recurrenceMaxOccurrences?: true
   deadline?: true
   deadlineText?: true
+  timezone?: true
+  snoozeUntil?: true
   submitTo?: true
   submitChannel?: true
   applicableIdentities?: true
@@ -312,6 +357,7 @@ export type TaskCountAggregateInputType = {
   evidenceSnippet?: true
   nextActionSuggestion?: true
   estimatedMinutes?: true
+  completedAt?: true
   priorityScore?: true
   priorityReason?: true
   createdAt?: true
@@ -411,12 +457,18 @@ export type TaskGroupByOutputType = {
   title: string
   description: string
   taskType: $Enums.TaskType
+  startAt: Date | null
   recurrenceType: string
   recurrenceDays: runtime.JsonValue
   recurrenceTargetCount: number
   recurrenceLimit: number | null
+  recurrenceStartAt: Date | null
+  recurrenceUntil: Date | null
+  recurrenceMaxOccurrences: number | null
   deadline: Date | null
   deadlineText: string | null
+  timezone: string
+  snoozeUntil: Date | null
   submitTo: string | null
   submitChannel: string | null
   applicableIdentities: runtime.JsonValue
@@ -444,6 +496,7 @@ export type TaskGroupByOutputType = {
   evidenceSnippet: string
   nextActionSuggestion: string
   estimatedMinutes: number | null
+  completedAt: Date | null
   priorityScore: number
   priorityReason: string
   createdAt: Date
@@ -479,12 +532,18 @@ export type TaskWhereInput = {
   title?: Prisma.StringFilter<"Task"> | string
   description?: Prisma.StringFilter<"Task"> | string
   taskType?: Prisma.EnumTaskTypeFilter<"Task"> | $Enums.TaskType
+  startAt?: Prisma.DateTimeNullableFilter<"Task"> | Date | string | null
   recurrenceType?: Prisma.StringFilter<"Task"> | string
   recurrenceDays?: Prisma.JsonFilter<"Task">
   recurrenceTargetCount?: Prisma.IntFilter<"Task"> | number
   recurrenceLimit?: Prisma.IntNullableFilter<"Task"> | number | null
+  recurrenceStartAt?: Prisma.DateTimeNullableFilter<"Task"> | Date | string | null
+  recurrenceUntil?: Prisma.DateTimeNullableFilter<"Task"> | Date | string | null
+  recurrenceMaxOccurrences?: Prisma.IntNullableFilter<"Task"> | number | null
   deadline?: Prisma.DateTimeNullableFilter<"Task"> | Date | string | null
   deadlineText?: Prisma.StringNullableFilter<"Task"> | string | null
+  timezone?: Prisma.StringFilter<"Task"> | string
+  snoozeUntil?: Prisma.DateTimeNullableFilter<"Task"> | Date | string | null
   submitTo?: Prisma.StringNullableFilter<"Task"> | string | null
   submitChannel?: Prisma.StringNullableFilter<"Task"> | string | null
   applicableIdentities?: Prisma.JsonFilter<"Task">
@@ -512,6 +571,7 @@ export type TaskWhereInput = {
   evidenceSnippet?: Prisma.StringFilter<"Task"> | string
   nextActionSuggestion?: Prisma.StringFilter<"Task"> | string
   estimatedMinutes?: Prisma.IntNullableFilter<"Task"> | number | null
+  completedAt?: Prisma.DateTimeNullableFilter<"Task"> | Date | string | null
   priorityScore?: Prisma.IntFilter<"Task"> | number
   priorityReason?: Prisma.StringFilter<"Task"> | string
   createdAt?: Prisma.DateTimeFilter<"Task"> | Date | string
@@ -529,12 +589,18 @@ export type TaskOrderByWithRelationInput = {
   title?: Prisma.SortOrder
   description?: Prisma.SortOrder
   taskType?: Prisma.SortOrder
+  startAt?: Prisma.SortOrderInput | Prisma.SortOrder
   recurrenceType?: Prisma.SortOrder
   recurrenceDays?: Prisma.SortOrder
   recurrenceTargetCount?: Prisma.SortOrder
   recurrenceLimit?: Prisma.SortOrderInput | Prisma.SortOrder
+  recurrenceStartAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  recurrenceUntil?: Prisma.SortOrderInput | Prisma.SortOrder
+  recurrenceMaxOccurrences?: Prisma.SortOrderInput | Prisma.SortOrder
   deadline?: Prisma.SortOrderInput | Prisma.SortOrder
   deadlineText?: Prisma.SortOrderInput | Prisma.SortOrder
+  timezone?: Prisma.SortOrder
+  snoozeUntil?: Prisma.SortOrderInput | Prisma.SortOrder
   submitTo?: Prisma.SortOrderInput | Prisma.SortOrder
   submitChannel?: Prisma.SortOrderInput | Prisma.SortOrder
   applicableIdentities?: Prisma.SortOrder
@@ -562,6 +628,7 @@ export type TaskOrderByWithRelationInput = {
   evidenceSnippet?: Prisma.SortOrder
   nextActionSuggestion?: Prisma.SortOrder
   estimatedMinutes?: Prisma.SortOrderInput | Prisma.SortOrder
+  completedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   priorityScore?: Prisma.SortOrder
   priorityReason?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -582,12 +649,18 @@ export type TaskWhereUniqueInput = Prisma.AtLeast<{
   title?: Prisma.StringFilter<"Task"> | string
   description?: Prisma.StringFilter<"Task"> | string
   taskType?: Prisma.EnumTaskTypeFilter<"Task"> | $Enums.TaskType
+  startAt?: Prisma.DateTimeNullableFilter<"Task"> | Date | string | null
   recurrenceType?: Prisma.StringFilter<"Task"> | string
   recurrenceDays?: Prisma.JsonFilter<"Task">
   recurrenceTargetCount?: Prisma.IntFilter<"Task"> | number
   recurrenceLimit?: Prisma.IntNullableFilter<"Task"> | number | null
+  recurrenceStartAt?: Prisma.DateTimeNullableFilter<"Task"> | Date | string | null
+  recurrenceUntil?: Prisma.DateTimeNullableFilter<"Task"> | Date | string | null
+  recurrenceMaxOccurrences?: Prisma.IntNullableFilter<"Task"> | number | null
   deadline?: Prisma.DateTimeNullableFilter<"Task"> | Date | string | null
   deadlineText?: Prisma.StringNullableFilter<"Task"> | string | null
+  timezone?: Prisma.StringFilter<"Task"> | string
+  snoozeUntil?: Prisma.DateTimeNullableFilter<"Task"> | Date | string | null
   submitTo?: Prisma.StringNullableFilter<"Task"> | string | null
   submitChannel?: Prisma.StringNullableFilter<"Task"> | string | null
   applicableIdentities?: Prisma.JsonFilter<"Task">
@@ -615,6 +688,7 @@ export type TaskWhereUniqueInput = Prisma.AtLeast<{
   evidenceSnippet?: Prisma.StringFilter<"Task"> | string
   nextActionSuggestion?: Prisma.StringFilter<"Task"> | string
   estimatedMinutes?: Prisma.IntNullableFilter<"Task"> | number | null
+  completedAt?: Prisma.DateTimeNullableFilter<"Task"> | Date | string | null
   priorityScore?: Prisma.IntFilter<"Task"> | number
   priorityReason?: Prisma.StringFilter<"Task"> | string
   createdAt?: Prisma.DateTimeFilter<"Task"> | Date | string
@@ -632,12 +706,18 @@ export type TaskOrderByWithAggregationInput = {
   title?: Prisma.SortOrder
   description?: Prisma.SortOrder
   taskType?: Prisma.SortOrder
+  startAt?: Prisma.SortOrderInput | Prisma.SortOrder
   recurrenceType?: Prisma.SortOrder
   recurrenceDays?: Prisma.SortOrder
   recurrenceTargetCount?: Prisma.SortOrder
   recurrenceLimit?: Prisma.SortOrderInput | Prisma.SortOrder
+  recurrenceStartAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  recurrenceUntil?: Prisma.SortOrderInput | Prisma.SortOrder
+  recurrenceMaxOccurrences?: Prisma.SortOrderInput | Prisma.SortOrder
   deadline?: Prisma.SortOrderInput | Prisma.SortOrder
   deadlineText?: Prisma.SortOrderInput | Prisma.SortOrder
+  timezone?: Prisma.SortOrder
+  snoozeUntil?: Prisma.SortOrderInput | Prisma.SortOrder
   submitTo?: Prisma.SortOrderInput | Prisma.SortOrder
   submitChannel?: Prisma.SortOrderInput | Prisma.SortOrder
   applicableIdentities?: Prisma.SortOrder
@@ -665,6 +745,7 @@ export type TaskOrderByWithAggregationInput = {
   evidenceSnippet?: Prisma.SortOrder
   nextActionSuggestion?: Prisma.SortOrder
   estimatedMinutes?: Prisma.SortOrderInput | Prisma.SortOrder
+  completedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   priorityScore?: Prisma.SortOrder
   priorityReason?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -685,12 +766,18 @@ export type TaskScalarWhereWithAggregatesInput = {
   title?: Prisma.StringWithAggregatesFilter<"Task"> | string
   description?: Prisma.StringWithAggregatesFilter<"Task"> | string
   taskType?: Prisma.EnumTaskTypeWithAggregatesFilter<"Task"> | $Enums.TaskType
+  startAt?: Prisma.DateTimeNullableWithAggregatesFilter<"Task"> | Date | string | null
   recurrenceType?: Prisma.StringWithAggregatesFilter<"Task"> | string
   recurrenceDays?: Prisma.JsonWithAggregatesFilter<"Task">
   recurrenceTargetCount?: Prisma.IntWithAggregatesFilter<"Task"> | number
   recurrenceLimit?: Prisma.IntNullableWithAggregatesFilter<"Task"> | number | null
+  recurrenceStartAt?: Prisma.DateTimeNullableWithAggregatesFilter<"Task"> | Date | string | null
+  recurrenceUntil?: Prisma.DateTimeNullableWithAggregatesFilter<"Task"> | Date | string | null
+  recurrenceMaxOccurrences?: Prisma.IntNullableWithAggregatesFilter<"Task"> | number | null
   deadline?: Prisma.DateTimeNullableWithAggregatesFilter<"Task"> | Date | string | null
   deadlineText?: Prisma.StringNullableWithAggregatesFilter<"Task"> | string | null
+  timezone?: Prisma.StringWithAggregatesFilter<"Task"> | string
+  snoozeUntil?: Prisma.DateTimeNullableWithAggregatesFilter<"Task"> | Date | string | null
   submitTo?: Prisma.StringNullableWithAggregatesFilter<"Task"> | string | null
   submitChannel?: Prisma.StringNullableWithAggregatesFilter<"Task"> | string | null
   applicableIdentities?: Prisma.JsonWithAggregatesFilter<"Task">
@@ -718,6 +805,7 @@ export type TaskScalarWhereWithAggregatesInput = {
   evidenceSnippet?: Prisma.StringWithAggregatesFilter<"Task"> | string
   nextActionSuggestion?: Prisma.StringWithAggregatesFilter<"Task"> | string
   estimatedMinutes?: Prisma.IntNullableWithAggregatesFilter<"Task"> | number | null
+  completedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"Task"> | Date | string | null
   priorityScore?: Prisma.IntWithAggregatesFilter<"Task"> | number
   priorityReason?: Prisma.StringWithAggregatesFilter<"Task"> | string
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"Task"> | Date | string
@@ -729,12 +817,18 @@ export type TaskCreateInput = {
   title: string
   description: string
   taskType: $Enums.TaskType
+  startAt?: Date | string | null
   recurrenceType?: string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: number
   recurrenceLimit?: number | null
+  recurrenceStartAt?: Date | string | null
+  recurrenceUntil?: Date | string | null
+  recurrenceMaxOccurrences?: number | null
   deadline?: Date | string | null
   deadlineText?: string | null
+  timezone?: string
+  snoozeUntil?: Date | string | null
   submitTo?: string | null
   submitChannel?: string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -762,6 +856,7 @@ export type TaskCreateInput = {
   evidenceSnippet: string
   nextActionSuggestion: string
   estimatedMinutes?: number | null
+  completedAt?: Date | string | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -779,12 +874,18 @@ export type TaskUncheckedCreateInput = {
   title: string
   description: string
   taskType: $Enums.TaskType
+  startAt?: Date | string | null
   recurrenceType?: string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: number
   recurrenceLimit?: number | null
+  recurrenceStartAt?: Date | string | null
+  recurrenceUntil?: Date | string | null
+  recurrenceMaxOccurrences?: number | null
   deadline?: Date | string | null
   deadlineText?: string | null
+  timezone?: string
+  snoozeUntil?: Date | string | null
   submitTo?: string | null
   submitChannel?: string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -812,6 +913,7 @@ export type TaskUncheckedCreateInput = {
   evidenceSnippet: string
   nextActionSuggestion: string
   estimatedMinutes?: number | null
+  completedAt?: Date | string | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -827,12 +929,18 @@ export type TaskUpdateInput = {
   title?: Prisma.StringFieldUpdateOperationsInput | string
   description?: Prisma.StringFieldUpdateOperationsInput | string
   taskType?: Prisma.EnumTaskTypeFieldUpdateOperationsInput | $Enums.TaskType
+  startAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   recurrenceType?: Prisma.StringFieldUpdateOperationsInput | string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: Prisma.IntFieldUpdateOperationsInput | number
   recurrenceLimit?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  recurrenceStartAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceMaxOccurrences?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   deadline?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deadlineText?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  timezone?: Prisma.StringFieldUpdateOperationsInput | string
+  snoozeUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   submitTo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   submitChannel?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -860,6 +968,7 @@ export type TaskUpdateInput = {
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
   estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -877,12 +986,18 @@ export type TaskUncheckedUpdateInput = {
   title?: Prisma.StringFieldUpdateOperationsInput | string
   description?: Prisma.StringFieldUpdateOperationsInput | string
   taskType?: Prisma.EnumTaskTypeFieldUpdateOperationsInput | $Enums.TaskType
+  startAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   recurrenceType?: Prisma.StringFieldUpdateOperationsInput | string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: Prisma.IntFieldUpdateOperationsInput | number
   recurrenceLimit?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  recurrenceStartAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceMaxOccurrences?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   deadline?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deadlineText?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  timezone?: Prisma.StringFieldUpdateOperationsInput | string
+  snoozeUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   submitTo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   submitChannel?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -910,6 +1025,7 @@ export type TaskUncheckedUpdateInput = {
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
   estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -926,12 +1042,18 @@ export type TaskCreateManyInput = {
   title: string
   description: string
   taskType: $Enums.TaskType
+  startAt?: Date | string | null
   recurrenceType?: string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: number
   recurrenceLimit?: number | null
+  recurrenceStartAt?: Date | string | null
+  recurrenceUntil?: Date | string | null
+  recurrenceMaxOccurrences?: number | null
   deadline?: Date | string | null
   deadlineText?: string | null
+  timezone?: string
+  snoozeUntil?: Date | string | null
   submitTo?: string | null
   submitChannel?: string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -959,6 +1081,7 @@ export type TaskCreateManyInput = {
   evidenceSnippet: string
   nextActionSuggestion: string
   estimatedMinutes?: number | null
+  completedAt?: Date | string | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -970,12 +1093,18 @@ export type TaskUpdateManyMutationInput = {
   title?: Prisma.StringFieldUpdateOperationsInput | string
   description?: Prisma.StringFieldUpdateOperationsInput | string
   taskType?: Prisma.EnumTaskTypeFieldUpdateOperationsInput | $Enums.TaskType
+  startAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   recurrenceType?: Prisma.StringFieldUpdateOperationsInput | string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: Prisma.IntFieldUpdateOperationsInput | number
   recurrenceLimit?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  recurrenceStartAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceMaxOccurrences?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   deadline?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deadlineText?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  timezone?: Prisma.StringFieldUpdateOperationsInput | string
+  snoozeUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   submitTo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   submitChannel?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -1003,6 +1132,7 @@ export type TaskUpdateManyMutationInput = {
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
   estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1015,12 +1145,18 @@ export type TaskUncheckedUpdateManyInput = {
   title?: Prisma.StringFieldUpdateOperationsInput | string
   description?: Prisma.StringFieldUpdateOperationsInput | string
   taskType?: Prisma.EnumTaskTypeFieldUpdateOperationsInput | $Enums.TaskType
+  startAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   recurrenceType?: Prisma.StringFieldUpdateOperationsInput | string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: Prisma.IntFieldUpdateOperationsInput | number
   recurrenceLimit?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  recurrenceStartAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceMaxOccurrences?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   deadline?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deadlineText?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  timezone?: Prisma.StringFieldUpdateOperationsInput | string
+  snoozeUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   submitTo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   submitChannel?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -1048,6 +1184,7 @@ export type TaskUncheckedUpdateManyInput = {
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
   estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1070,12 +1207,18 @@ export type TaskCountOrderByAggregateInput = {
   title?: Prisma.SortOrder
   description?: Prisma.SortOrder
   taskType?: Prisma.SortOrder
+  startAt?: Prisma.SortOrder
   recurrenceType?: Prisma.SortOrder
   recurrenceDays?: Prisma.SortOrder
   recurrenceTargetCount?: Prisma.SortOrder
   recurrenceLimit?: Prisma.SortOrder
+  recurrenceStartAt?: Prisma.SortOrder
+  recurrenceUntil?: Prisma.SortOrder
+  recurrenceMaxOccurrences?: Prisma.SortOrder
   deadline?: Prisma.SortOrder
   deadlineText?: Prisma.SortOrder
+  timezone?: Prisma.SortOrder
+  snoozeUntil?: Prisma.SortOrder
   submitTo?: Prisma.SortOrder
   submitChannel?: Prisma.SortOrder
   applicableIdentities?: Prisma.SortOrder
@@ -1103,6 +1246,7 @@ export type TaskCountOrderByAggregateInput = {
   evidenceSnippet?: Prisma.SortOrder
   nextActionSuggestion?: Prisma.SortOrder
   estimatedMinutes?: Prisma.SortOrder
+  completedAt?: Prisma.SortOrder
   priorityScore?: Prisma.SortOrder
   priorityReason?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -1112,6 +1256,7 @@ export type TaskCountOrderByAggregateInput = {
 export type TaskAvgOrderByAggregateInput = {
   recurrenceTargetCount?: Prisma.SortOrder
   recurrenceLimit?: Prisma.SortOrder
+  recurrenceMaxOccurrences?: Prisma.SortOrder
   deadlineInferenceConfidence?: Prisma.SortOrder
   confidence?: Prisma.SortOrder
   estimatedMinutes?: Prisma.SortOrder
@@ -1124,11 +1269,17 @@ export type TaskMaxOrderByAggregateInput = {
   title?: Prisma.SortOrder
   description?: Prisma.SortOrder
   taskType?: Prisma.SortOrder
+  startAt?: Prisma.SortOrder
   recurrenceType?: Prisma.SortOrder
   recurrenceTargetCount?: Prisma.SortOrder
   recurrenceLimit?: Prisma.SortOrder
+  recurrenceStartAt?: Prisma.SortOrder
+  recurrenceUntil?: Prisma.SortOrder
+  recurrenceMaxOccurrences?: Prisma.SortOrder
   deadline?: Prisma.SortOrder
   deadlineText?: Prisma.SortOrder
+  timezone?: Prisma.SortOrder
+  snoozeUntil?: Prisma.SortOrder
   submitTo?: Prisma.SortOrder
   submitChannel?: Prisma.SortOrder
   identityHint?: Prisma.SortOrder
@@ -1153,6 +1304,7 @@ export type TaskMaxOrderByAggregateInput = {
   evidenceSnippet?: Prisma.SortOrder
   nextActionSuggestion?: Prisma.SortOrder
   estimatedMinutes?: Prisma.SortOrder
+  completedAt?: Prisma.SortOrder
   priorityScore?: Prisma.SortOrder
   priorityReason?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -1165,11 +1317,17 @@ export type TaskMinOrderByAggregateInput = {
   title?: Prisma.SortOrder
   description?: Prisma.SortOrder
   taskType?: Prisma.SortOrder
+  startAt?: Prisma.SortOrder
   recurrenceType?: Prisma.SortOrder
   recurrenceTargetCount?: Prisma.SortOrder
   recurrenceLimit?: Prisma.SortOrder
+  recurrenceStartAt?: Prisma.SortOrder
+  recurrenceUntil?: Prisma.SortOrder
+  recurrenceMaxOccurrences?: Prisma.SortOrder
   deadline?: Prisma.SortOrder
   deadlineText?: Prisma.SortOrder
+  timezone?: Prisma.SortOrder
+  snoozeUntil?: Prisma.SortOrder
   submitTo?: Prisma.SortOrder
   submitChannel?: Prisma.SortOrder
   identityHint?: Prisma.SortOrder
@@ -1194,6 +1352,7 @@ export type TaskMinOrderByAggregateInput = {
   evidenceSnippet?: Prisma.SortOrder
   nextActionSuggestion?: Prisma.SortOrder
   estimatedMinutes?: Prisma.SortOrder
+  completedAt?: Prisma.SortOrder
   priorityScore?: Prisma.SortOrder
   priorityReason?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
@@ -1203,6 +1362,7 @@ export type TaskMinOrderByAggregateInput = {
 export type TaskSumOrderByAggregateInput = {
   recurrenceTargetCount?: Prisma.SortOrder
   recurrenceLimit?: Prisma.SortOrder
+  recurrenceMaxOccurrences?: Prisma.SortOrder
   deadlineInferenceConfidence?: Prisma.SortOrder
   confidence?: Prisma.SortOrder
   estimatedMinutes?: Prisma.SortOrder
@@ -1361,12 +1521,18 @@ export type TaskCreateWithoutSourceInput = {
   title: string
   description: string
   taskType: $Enums.TaskType
+  startAt?: Date | string | null
   recurrenceType?: string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: number
   recurrenceLimit?: number | null
+  recurrenceStartAt?: Date | string | null
+  recurrenceUntil?: Date | string | null
+  recurrenceMaxOccurrences?: number | null
   deadline?: Date | string | null
   deadlineText?: string | null
+  timezone?: string
+  snoozeUntil?: Date | string | null
   submitTo?: string | null
   submitChannel?: string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -1394,6 +1560,7 @@ export type TaskCreateWithoutSourceInput = {
   evidenceSnippet: string
   nextActionSuggestion: string
   estimatedMinutes?: number | null
+  completedAt?: Date | string | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -1409,12 +1576,18 @@ export type TaskUncheckedCreateWithoutSourceInput = {
   title: string
   description: string
   taskType: $Enums.TaskType
+  startAt?: Date | string | null
   recurrenceType?: string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: number
   recurrenceLimit?: number | null
+  recurrenceStartAt?: Date | string | null
+  recurrenceUntil?: Date | string | null
+  recurrenceMaxOccurrences?: number | null
   deadline?: Date | string | null
   deadlineText?: string | null
+  timezone?: string
+  snoozeUntil?: Date | string | null
   submitTo?: string | null
   submitChannel?: string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -1442,6 +1615,7 @@ export type TaskUncheckedCreateWithoutSourceInput = {
   evidenceSnippet: string
   nextActionSuggestion: string
   estimatedMinutes?: number | null
+  completedAt?: Date | string | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -1486,12 +1660,18 @@ export type TaskScalarWhereInput = {
   title?: Prisma.StringFilter<"Task"> | string
   description?: Prisma.StringFilter<"Task"> | string
   taskType?: Prisma.EnumTaskTypeFilter<"Task"> | $Enums.TaskType
+  startAt?: Prisma.DateTimeNullableFilter<"Task"> | Date | string | null
   recurrenceType?: Prisma.StringFilter<"Task"> | string
   recurrenceDays?: Prisma.JsonFilter<"Task">
   recurrenceTargetCount?: Prisma.IntFilter<"Task"> | number
   recurrenceLimit?: Prisma.IntNullableFilter<"Task"> | number | null
+  recurrenceStartAt?: Prisma.DateTimeNullableFilter<"Task"> | Date | string | null
+  recurrenceUntil?: Prisma.DateTimeNullableFilter<"Task"> | Date | string | null
+  recurrenceMaxOccurrences?: Prisma.IntNullableFilter<"Task"> | number | null
   deadline?: Prisma.DateTimeNullableFilter<"Task"> | Date | string | null
   deadlineText?: Prisma.StringNullableFilter<"Task"> | string | null
+  timezone?: Prisma.StringFilter<"Task"> | string
+  snoozeUntil?: Prisma.DateTimeNullableFilter<"Task"> | Date | string | null
   submitTo?: Prisma.StringNullableFilter<"Task"> | string | null
   submitChannel?: Prisma.StringNullableFilter<"Task"> | string | null
   applicableIdentities?: Prisma.JsonFilter<"Task">
@@ -1519,6 +1699,7 @@ export type TaskScalarWhereInput = {
   evidenceSnippet?: Prisma.StringFilter<"Task"> | string
   nextActionSuggestion?: Prisma.StringFilter<"Task"> | string
   estimatedMinutes?: Prisma.IntNullableFilter<"Task"> | number | null
+  completedAt?: Prisma.DateTimeNullableFilter<"Task"> | Date | string | null
   priorityScore?: Prisma.IntFilter<"Task"> | number
   priorityReason?: Prisma.StringFilter<"Task"> | string
   createdAt?: Prisma.DateTimeFilter<"Task"> | Date | string
@@ -1530,12 +1711,18 @@ export type TaskCreateWithoutSuccessorLinksInput = {
   title: string
   description: string
   taskType: $Enums.TaskType
+  startAt?: Date | string | null
   recurrenceType?: string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: number
   recurrenceLimit?: number | null
+  recurrenceStartAt?: Date | string | null
+  recurrenceUntil?: Date | string | null
+  recurrenceMaxOccurrences?: number | null
   deadline?: Date | string | null
   deadlineText?: string | null
+  timezone?: string
+  snoozeUntil?: Date | string | null
   submitTo?: string | null
   submitChannel?: string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -1563,6 +1750,7 @@ export type TaskCreateWithoutSuccessorLinksInput = {
   evidenceSnippet: string
   nextActionSuggestion: string
   estimatedMinutes?: number | null
+  completedAt?: Date | string | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -1579,12 +1767,18 @@ export type TaskUncheckedCreateWithoutSuccessorLinksInput = {
   title: string
   description: string
   taskType: $Enums.TaskType
+  startAt?: Date | string | null
   recurrenceType?: string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: number
   recurrenceLimit?: number | null
+  recurrenceStartAt?: Date | string | null
+  recurrenceUntil?: Date | string | null
+  recurrenceMaxOccurrences?: number | null
   deadline?: Date | string | null
   deadlineText?: string | null
+  timezone?: string
+  snoozeUntil?: Date | string | null
   submitTo?: string | null
   submitChannel?: string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -1612,6 +1806,7 @@ export type TaskUncheckedCreateWithoutSuccessorLinksInput = {
   evidenceSnippet: string
   nextActionSuggestion: string
   estimatedMinutes?: number | null
+  completedAt?: Date | string | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -1631,12 +1826,18 @@ export type TaskCreateWithoutPredecessorLinksInput = {
   title: string
   description: string
   taskType: $Enums.TaskType
+  startAt?: Date | string | null
   recurrenceType?: string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: number
   recurrenceLimit?: number | null
+  recurrenceStartAt?: Date | string | null
+  recurrenceUntil?: Date | string | null
+  recurrenceMaxOccurrences?: number | null
   deadline?: Date | string | null
   deadlineText?: string | null
+  timezone?: string
+  snoozeUntil?: Date | string | null
   submitTo?: string | null
   submitChannel?: string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -1664,6 +1865,7 @@ export type TaskCreateWithoutPredecessorLinksInput = {
   evidenceSnippet: string
   nextActionSuggestion: string
   estimatedMinutes?: number | null
+  completedAt?: Date | string | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -1680,12 +1882,18 @@ export type TaskUncheckedCreateWithoutPredecessorLinksInput = {
   title: string
   description: string
   taskType: $Enums.TaskType
+  startAt?: Date | string | null
   recurrenceType?: string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: number
   recurrenceLimit?: number | null
+  recurrenceStartAt?: Date | string | null
+  recurrenceUntil?: Date | string | null
+  recurrenceMaxOccurrences?: number | null
   deadline?: Date | string | null
   deadlineText?: string | null
+  timezone?: string
+  snoozeUntil?: Date | string | null
   submitTo?: string | null
   submitChannel?: string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -1713,6 +1921,7 @@ export type TaskUncheckedCreateWithoutPredecessorLinksInput = {
   evidenceSnippet: string
   nextActionSuggestion: string
   estimatedMinutes?: number | null
+  completedAt?: Date | string | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -1743,12 +1952,18 @@ export type TaskUpdateWithoutSuccessorLinksInput = {
   title?: Prisma.StringFieldUpdateOperationsInput | string
   description?: Prisma.StringFieldUpdateOperationsInput | string
   taskType?: Prisma.EnumTaskTypeFieldUpdateOperationsInput | $Enums.TaskType
+  startAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   recurrenceType?: Prisma.StringFieldUpdateOperationsInput | string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: Prisma.IntFieldUpdateOperationsInput | number
   recurrenceLimit?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  recurrenceStartAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceMaxOccurrences?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   deadline?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deadlineText?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  timezone?: Prisma.StringFieldUpdateOperationsInput | string
+  snoozeUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   submitTo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   submitChannel?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -1776,6 +1991,7 @@ export type TaskUpdateWithoutSuccessorLinksInput = {
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
   estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1792,12 +2008,18 @@ export type TaskUncheckedUpdateWithoutSuccessorLinksInput = {
   title?: Prisma.StringFieldUpdateOperationsInput | string
   description?: Prisma.StringFieldUpdateOperationsInput | string
   taskType?: Prisma.EnumTaskTypeFieldUpdateOperationsInput | $Enums.TaskType
+  startAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   recurrenceType?: Prisma.StringFieldUpdateOperationsInput | string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: Prisma.IntFieldUpdateOperationsInput | number
   recurrenceLimit?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  recurrenceStartAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceMaxOccurrences?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   deadline?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deadlineText?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  timezone?: Prisma.StringFieldUpdateOperationsInput | string
+  snoozeUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   submitTo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   submitChannel?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -1825,6 +2047,7 @@ export type TaskUncheckedUpdateWithoutSuccessorLinksInput = {
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
   estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1850,12 +2073,18 @@ export type TaskUpdateWithoutPredecessorLinksInput = {
   title?: Prisma.StringFieldUpdateOperationsInput | string
   description?: Prisma.StringFieldUpdateOperationsInput | string
   taskType?: Prisma.EnumTaskTypeFieldUpdateOperationsInput | $Enums.TaskType
+  startAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   recurrenceType?: Prisma.StringFieldUpdateOperationsInput | string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: Prisma.IntFieldUpdateOperationsInput | number
   recurrenceLimit?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  recurrenceStartAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceMaxOccurrences?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   deadline?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deadlineText?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  timezone?: Prisma.StringFieldUpdateOperationsInput | string
+  snoozeUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   submitTo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   submitChannel?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -1883,6 +2112,7 @@ export type TaskUpdateWithoutPredecessorLinksInput = {
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
   estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1899,12 +2129,18 @@ export type TaskUncheckedUpdateWithoutPredecessorLinksInput = {
   title?: Prisma.StringFieldUpdateOperationsInput | string
   description?: Prisma.StringFieldUpdateOperationsInput | string
   taskType?: Prisma.EnumTaskTypeFieldUpdateOperationsInput | $Enums.TaskType
+  startAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   recurrenceType?: Prisma.StringFieldUpdateOperationsInput | string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: Prisma.IntFieldUpdateOperationsInput | number
   recurrenceLimit?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  recurrenceStartAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceMaxOccurrences?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   deadline?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deadlineText?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  timezone?: Prisma.StringFieldUpdateOperationsInput | string
+  snoozeUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   submitTo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   submitChannel?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -1932,6 +2168,7 @@ export type TaskUncheckedUpdateWithoutPredecessorLinksInput = {
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
   estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1946,12 +2183,18 @@ export type TaskCreateWithoutActionLogsInput = {
   title: string
   description: string
   taskType: $Enums.TaskType
+  startAt?: Date | string | null
   recurrenceType?: string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: number
   recurrenceLimit?: number | null
+  recurrenceStartAt?: Date | string | null
+  recurrenceUntil?: Date | string | null
+  recurrenceMaxOccurrences?: number | null
   deadline?: Date | string | null
   deadlineText?: string | null
+  timezone?: string
+  snoozeUntil?: Date | string | null
   submitTo?: string | null
   submitChannel?: string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -1979,6 +2222,7 @@ export type TaskCreateWithoutActionLogsInput = {
   evidenceSnippet: string
   nextActionSuggestion: string
   estimatedMinutes?: number | null
+  completedAt?: Date | string | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -1995,12 +2239,18 @@ export type TaskUncheckedCreateWithoutActionLogsInput = {
   title: string
   description: string
   taskType: $Enums.TaskType
+  startAt?: Date | string | null
   recurrenceType?: string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: number
   recurrenceLimit?: number | null
+  recurrenceStartAt?: Date | string | null
+  recurrenceUntil?: Date | string | null
+  recurrenceMaxOccurrences?: number | null
   deadline?: Date | string | null
   deadlineText?: string | null
+  timezone?: string
+  snoozeUntil?: Date | string | null
   submitTo?: string | null
   submitChannel?: string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -2028,6 +2278,7 @@ export type TaskUncheckedCreateWithoutActionLogsInput = {
   evidenceSnippet: string
   nextActionSuggestion: string
   estimatedMinutes?: number | null
+  completedAt?: Date | string | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -2058,12 +2309,18 @@ export type TaskUpdateWithoutActionLogsInput = {
   title?: Prisma.StringFieldUpdateOperationsInput | string
   description?: Prisma.StringFieldUpdateOperationsInput | string
   taskType?: Prisma.EnumTaskTypeFieldUpdateOperationsInput | $Enums.TaskType
+  startAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   recurrenceType?: Prisma.StringFieldUpdateOperationsInput | string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: Prisma.IntFieldUpdateOperationsInput | number
   recurrenceLimit?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  recurrenceStartAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceMaxOccurrences?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   deadline?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deadlineText?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  timezone?: Prisma.StringFieldUpdateOperationsInput | string
+  snoozeUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   submitTo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   submitChannel?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -2091,6 +2348,7 @@ export type TaskUpdateWithoutActionLogsInput = {
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
   estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2107,12 +2365,18 @@ export type TaskUncheckedUpdateWithoutActionLogsInput = {
   title?: Prisma.StringFieldUpdateOperationsInput | string
   description?: Prisma.StringFieldUpdateOperationsInput | string
   taskType?: Prisma.EnumTaskTypeFieldUpdateOperationsInput | $Enums.TaskType
+  startAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   recurrenceType?: Prisma.StringFieldUpdateOperationsInput | string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: Prisma.IntFieldUpdateOperationsInput | number
   recurrenceLimit?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  recurrenceStartAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceMaxOccurrences?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   deadline?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deadlineText?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  timezone?: Prisma.StringFieldUpdateOperationsInput | string
+  snoozeUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   submitTo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   submitChannel?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -2140,6 +2404,7 @@ export type TaskUncheckedUpdateWithoutActionLogsInput = {
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
   estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2154,12 +2419,18 @@ export type TaskCreateWithoutProgressLogsInput = {
   title: string
   description: string
   taskType: $Enums.TaskType
+  startAt?: Date | string | null
   recurrenceType?: string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: number
   recurrenceLimit?: number | null
+  recurrenceStartAt?: Date | string | null
+  recurrenceUntil?: Date | string | null
+  recurrenceMaxOccurrences?: number | null
   deadline?: Date | string | null
   deadlineText?: string | null
+  timezone?: string
+  snoozeUntil?: Date | string | null
   submitTo?: string | null
   submitChannel?: string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -2187,6 +2458,7 @@ export type TaskCreateWithoutProgressLogsInput = {
   evidenceSnippet: string
   nextActionSuggestion: string
   estimatedMinutes?: number | null
+  completedAt?: Date | string | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -2203,12 +2475,18 @@ export type TaskUncheckedCreateWithoutProgressLogsInput = {
   title: string
   description: string
   taskType: $Enums.TaskType
+  startAt?: Date | string | null
   recurrenceType?: string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: number
   recurrenceLimit?: number | null
+  recurrenceStartAt?: Date | string | null
+  recurrenceUntil?: Date | string | null
+  recurrenceMaxOccurrences?: number | null
   deadline?: Date | string | null
   deadlineText?: string | null
+  timezone?: string
+  snoozeUntil?: Date | string | null
   submitTo?: string | null
   submitChannel?: string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -2236,6 +2514,7 @@ export type TaskUncheckedCreateWithoutProgressLogsInput = {
   evidenceSnippet: string
   nextActionSuggestion: string
   estimatedMinutes?: number | null
+  completedAt?: Date | string | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -2266,12 +2545,18 @@ export type TaskUpdateWithoutProgressLogsInput = {
   title?: Prisma.StringFieldUpdateOperationsInput | string
   description?: Prisma.StringFieldUpdateOperationsInput | string
   taskType?: Prisma.EnumTaskTypeFieldUpdateOperationsInput | $Enums.TaskType
+  startAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   recurrenceType?: Prisma.StringFieldUpdateOperationsInput | string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: Prisma.IntFieldUpdateOperationsInput | number
   recurrenceLimit?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  recurrenceStartAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceMaxOccurrences?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   deadline?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deadlineText?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  timezone?: Prisma.StringFieldUpdateOperationsInput | string
+  snoozeUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   submitTo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   submitChannel?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -2299,6 +2584,7 @@ export type TaskUpdateWithoutProgressLogsInput = {
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
   estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2315,12 +2601,18 @@ export type TaskUncheckedUpdateWithoutProgressLogsInput = {
   title?: Prisma.StringFieldUpdateOperationsInput | string
   description?: Prisma.StringFieldUpdateOperationsInput | string
   taskType?: Prisma.EnumTaskTypeFieldUpdateOperationsInput | $Enums.TaskType
+  startAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   recurrenceType?: Prisma.StringFieldUpdateOperationsInput | string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: Prisma.IntFieldUpdateOperationsInput | number
   recurrenceLimit?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  recurrenceStartAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceMaxOccurrences?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   deadline?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deadlineText?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  timezone?: Prisma.StringFieldUpdateOperationsInput | string
+  snoozeUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   submitTo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   submitChannel?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -2348,6 +2640,7 @@ export type TaskUncheckedUpdateWithoutProgressLogsInput = {
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
   estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2362,12 +2655,18 @@ export type TaskCreateManySourceInput = {
   title: string
   description: string
   taskType: $Enums.TaskType
+  startAt?: Date | string | null
   recurrenceType?: string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: number
   recurrenceLimit?: number | null
+  recurrenceStartAt?: Date | string | null
+  recurrenceUntil?: Date | string | null
+  recurrenceMaxOccurrences?: number | null
   deadline?: Date | string | null
   deadlineText?: string | null
+  timezone?: string
+  snoozeUntil?: Date | string | null
   submitTo?: string | null
   submitChannel?: string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -2395,6 +2694,7 @@ export type TaskCreateManySourceInput = {
   evidenceSnippet: string
   nextActionSuggestion: string
   estimatedMinutes?: number | null
+  completedAt?: Date | string | null
   priorityScore?: number
   priorityReason?: string
   createdAt?: Date | string
@@ -2406,12 +2706,18 @@ export type TaskUpdateWithoutSourceInput = {
   title?: Prisma.StringFieldUpdateOperationsInput | string
   description?: Prisma.StringFieldUpdateOperationsInput | string
   taskType?: Prisma.EnumTaskTypeFieldUpdateOperationsInput | $Enums.TaskType
+  startAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   recurrenceType?: Prisma.StringFieldUpdateOperationsInput | string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: Prisma.IntFieldUpdateOperationsInput | number
   recurrenceLimit?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  recurrenceStartAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceMaxOccurrences?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   deadline?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deadlineText?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  timezone?: Prisma.StringFieldUpdateOperationsInput | string
+  snoozeUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   submitTo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   submitChannel?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -2439,6 +2745,7 @@ export type TaskUpdateWithoutSourceInput = {
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
   estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2454,12 +2761,18 @@ export type TaskUncheckedUpdateWithoutSourceInput = {
   title?: Prisma.StringFieldUpdateOperationsInput | string
   description?: Prisma.StringFieldUpdateOperationsInput | string
   taskType?: Prisma.EnumTaskTypeFieldUpdateOperationsInput | $Enums.TaskType
+  startAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   recurrenceType?: Prisma.StringFieldUpdateOperationsInput | string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: Prisma.IntFieldUpdateOperationsInput | number
   recurrenceLimit?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  recurrenceStartAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceMaxOccurrences?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   deadline?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deadlineText?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  timezone?: Prisma.StringFieldUpdateOperationsInput | string
+  snoozeUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   submitTo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   submitChannel?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -2487,6 +2800,7 @@ export type TaskUncheckedUpdateWithoutSourceInput = {
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
   estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2502,12 +2816,18 @@ export type TaskUncheckedUpdateManyWithoutSourceInput = {
   title?: Prisma.StringFieldUpdateOperationsInput | string
   description?: Prisma.StringFieldUpdateOperationsInput | string
   taskType?: Prisma.EnumTaskTypeFieldUpdateOperationsInput | $Enums.TaskType
+  startAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   recurrenceType?: Prisma.StringFieldUpdateOperationsInput | string
   recurrenceDays?: Prisma.JsonNullValueInput | runtime.InputJsonValue
   recurrenceTargetCount?: Prisma.IntFieldUpdateOperationsInput | number
   recurrenceLimit?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  recurrenceStartAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  recurrenceMaxOccurrences?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   deadline?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deadlineText?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  timezone?: Prisma.StringFieldUpdateOperationsInput | string
+  snoozeUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   submitTo?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   submitChannel?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   applicableIdentities?: Prisma.JsonNullValueInput | runtime.InputJsonValue
@@ -2535,6 +2855,7 @@ export type TaskUncheckedUpdateManyWithoutSourceInput = {
   evidenceSnippet?: Prisma.StringFieldUpdateOperationsInput | string
   nextActionSuggestion?: Prisma.StringFieldUpdateOperationsInput | string
   estimatedMinutes?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  completedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   priorityScore?: Prisma.IntFieldUpdateOperationsInput | number
   priorityReason?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2605,12 +2926,18 @@ export type TaskSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   title?: boolean
   description?: boolean
   taskType?: boolean
+  startAt?: boolean
   recurrenceType?: boolean
   recurrenceDays?: boolean
   recurrenceTargetCount?: boolean
   recurrenceLimit?: boolean
+  recurrenceStartAt?: boolean
+  recurrenceUntil?: boolean
+  recurrenceMaxOccurrences?: boolean
   deadline?: boolean
   deadlineText?: boolean
+  timezone?: boolean
+  snoozeUntil?: boolean
   submitTo?: boolean
   submitChannel?: boolean
   applicableIdentities?: boolean
@@ -2638,6 +2965,7 @@ export type TaskSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   evidenceSnippet?: boolean
   nextActionSuggestion?: boolean
   estimatedMinutes?: boolean
+  completedAt?: boolean
   priorityScore?: boolean
   priorityReason?: boolean
   createdAt?: boolean
@@ -2656,12 +2984,18 @@ export type TaskSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   title?: boolean
   description?: boolean
   taskType?: boolean
+  startAt?: boolean
   recurrenceType?: boolean
   recurrenceDays?: boolean
   recurrenceTargetCount?: boolean
   recurrenceLimit?: boolean
+  recurrenceStartAt?: boolean
+  recurrenceUntil?: boolean
+  recurrenceMaxOccurrences?: boolean
   deadline?: boolean
   deadlineText?: boolean
+  timezone?: boolean
+  snoozeUntil?: boolean
   submitTo?: boolean
   submitChannel?: boolean
   applicableIdentities?: boolean
@@ -2689,6 +3023,7 @@ export type TaskSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   evidenceSnippet?: boolean
   nextActionSuggestion?: boolean
   estimatedMinutes?: boolean
+  completedAt?: boolean
   priorityScore?: boolean
   priorityReason?: boolean
   createdAt?: boolean
@@ -2702,12 +3037,18 @@ export type TaskSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   title?: boolean
   description?: boolean
   taskType?: boolean
+  startAt?: boolean
   recurrenceType?: boolean
   recurrenceDays?: boolean
   recurrenceTargetCount?: boolean
   recurrenceLimit?: boolean
+  recurrenceStartAt?: boolean
+  recurrenceUntil?: boolean
+  recurrenceMaxOccurrences?: boolean
   deadline?: boolean
   deadlineText?: boolean
+  timezone?: boolean
+  snoozeUntil?: boolean
   submitTo?: boolean
   submitChannel?: boolean
   applicableIdentities?: boolean
@@ -2735,6 +3076,7 @@ export type TaskSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Extensio
   evidenceSnippet?: boolean
   nextActionSuggestion?: boolean
   estimatedMinutes?: boolean
+  completedAt?: boolean
   priorityScore?: boolean
   priorityReason?: boolean
   createdAt?: boolean
@@ -2748,12 +3090,18 @@ export type TaskSelectScalar = {
   title?: boolean
   description?: boolean
   taskType?: boolean
+  startAt?: boolean
   recurrenceType?: boolean
   recurrenceDays?: boolean
   recurrenceTargetCount?: boolean
   recurrenceLimit?: boolean
+  recurrenceStartAt?: boolean
+  recurrenceUntil?: boolean
+  recurrenceMaxOccurrences?: boolean
   deadline?: boolean
   deadlineText?: boolean
+  timezone?: boolean
+  snoozeUntil?: boolean
   submitTo?: boolean
   submitChannel?: boolean
   applicableIdentities?: boolean
@@ -2781,13 +3129,14 @@ export type TaskSelectScalar = {
   evidenceSnippet?: boolean
   nextActionSuggestion?: boolean
   estimatedMinutes?: boolean
+  completedAt?: boolean
   priorityScore?: boolean
   priorityReason?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type TaskOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "sourceId" | "title" | "description" | "taskType" | "recurrenceType" | "recurrenceDays" | "recurrenceTargetCount" | "recurrenceLimit" | "deadline" | "deadlineText" | "submitTo" | "submitChannel" | "applicableIdentities" | "identityHint" | "deliveryType" | "requiresSignature" | "requiresStamp" | "materials" | "dependsOnExternal" | "waitingFor" | "waitingReasonType" | "waitingReasonText" | "nextCheckAt" | "status" | "needsHumanReview" | "reviewResolved" | "reviewReasons" | "deadlineInferenceType" | "deadlineInferenceRule" | "deadlineInferenceReason" | "deadlineInferenceConfidence" | "deadlineUsedCurrentYear" | "deadlineRolledToNextYear" | "confidence" | "evidenceSnippet" | "nextActionSuggestion" | "estimatedMinutes" | "priorityScore" | "priorityReason" | "createdAt" | "updatedAt", ExtArgs["result"]["task"]>
+export type TaskOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "sourceId" | "title" | "description" | "taskType" | "startAt" | "recurrenceType" | "recurrenceDays" | "recurrenceTargetCount" | "recurrenceLimit" | "recurrenceStartAt" | "recurrenceUntil" | "recurrenceMaxOccurrences" | "deadline" | "deadlineText" | "timezone" | "snoozeUntil" | "submitTo" | "submitChannel" | "applicableIdentities" | "identityHint" | "deliveryType" | "requiresSignature" | "requiresStamp" | "materials" | "dependsOnExternal" | "waitingFor" | "waitingReasonType" | "waitingReasonText" | "nextCheckAt" | "status" | "needsHumanReview" | "reviewResolved" | "reviewReasons" | "deadlineInferenceType" | "deadlineInferenceRule" | "deadlineInferenceReason" | "deadlineInferenceConfidence" | "deadlineUsedCurrentYear" | "deadlineRolledToNextYear" | "confidence" | "evidenceSnippet" | "nextActionSuggestion" | "estimatedMinutes" | "completedAt" | "priorityScore" | "priorityReason" | "createdAt" | "updatedAt", ExtArgs["result"]["task"]>
 export type TaskInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   source?: boolean | Prisma.SourceDefaultArgs<ExtArgs>
   predecessorLinks?: boolean | Prisma.Task$predecessorLinksArgs<ExtArgs>
@@ -2818,12 +3167,18 @@ export type $TaskPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     title: string
     description: string
     taskType: $Enums.TaskType
+    startAt: Date | null
     recurrenceType: string
     recurrenceDays: runtime.JsonValue
     recurrenceTargetCount: number
     recurrenceLimit: number | null
+    recurrenceStartAt: Date | null
+    recurrenceUntil: Date | null
+    recurrenceMaxOccurrences: number | null
     deadline: Date | null
     deadlineText: string | null
+    timezone: string
+    snoozeUntil: Date | null
     submitTo: string | null
     submitChannel: string | null
     applicableIdentities: runtime.JsonValue
@@ -2851,6 +3206,7 @@ export type $TaskPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     evidenceSnippet: string
     nextActionSuggestion: string
     estimatedMinutes: number | null
+    completedAt: Date | null
     priorityScore: number
     priorityReason: string
     createdAt: Date
@@ -3288,12 +3644,18 @@ export interface TaskFieldRefs {
   readonly title: Prisma.FieldRef<"Task", 'String'>
   readonly description: Prisma.FieldRef<"Task", 'String'>
   readonly taskType: Prisma.FieldRef<"Task", 'TaskType'>
+  readonly startAt: Prisma.FieldRef<"Task", 'DateTime'>
   readonly recurrenceType: Prisma.FieldRef<"Task", 'String'>
   readonly recurrenceDays: Prisma.FieldRef<"Task", 'Json'>
   readonly recurrenceTargetCount: Prisma.FieldRef<"Task", 'Int'>
   readonly recurrenceLimit: Prisma.FieldRef<"Task", 'Int'>
+  readonly recurrenceStartAt: Prisma.FieldRef<"Task", 'DateTime'>
+  readonly recurrenceUntil: Prisma.FieldRef<"Task", 'DateTime'>
+  readonly recurrenceMaxOccurrences: Prisma.FieldRef<"Task", 'Int'>
   readonly deadline: Prisma.FieldRef<"Task", 'DateTime'>
   readonly deadlineText: Prisma.FieldRef<"Task", 'String'>
+  readonly timezone: Prisma.FieldRef<"Task", 'String'>
+  readonly snoozeUntil: Prisma.FieldRef<"Task", 'DateTime'>
   readonly submitTo: Prisma.FieldRef<"Task", 'String'>
   readonly submitChannel: Prisma.FieldRef<"Task", 'String'>
   readonly applicableIdentities: Prisma.FieldRef<"Task", 'Json'>
@@ -3321,6 +3683,7 @@ export interface TaskFieldRefs {
   readonly evidenceSnippet: Prisma.FieldRef<"Task", 'String'>
   readonly nextActionSuggestion: Prisma.FieldRef<"Task", 'String'>
   readonly estimatedMinutes: Prisma.FieldRef<"Task", 'Int'>
+  readonly completedAt: Prisma.FieldRef<"Task", 'DateTime'>
   readonly priorityScore: Prisma.FieldRef<"Task", 'Int'>
   readonly priorityReason: Prisma.FieldRef<"Task", 'String'>
   readonly createdAt: Prisma.FieldRef<"Task", 'DateTime'>

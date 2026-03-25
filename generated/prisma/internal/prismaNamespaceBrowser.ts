@@ -54,7 +54,8 @@ export const ModelName = {
   Task: 'Task',
   Dependency: 'Dependency',
   ActionLog: 'ActionLog',
-  TaskProgressLog: 'TaskProgressLog'
+  TaskProgressLog: 'TaskProgressLog',
+  DailyLogSnapshot: 'DailyLogSnapshot'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -112,12 +113,18 @@ export const TaskScalarFieldEnum = {
   title: 'title',
   description: 'description',
   taskType: 'taskType',
+  startAt: 'startAt',
   recurrenceType: 'recurrenceType',
   recurrenceDays: 'recurrenceDays',
   recurrenceTargetCount: 'recurrenceTargetCount',
   recurrenceLimit: 'recurrenceLimit',
+  recurrenceStartAt: 'recurrenceStartAt',
+  recurrenceUntil: 'recurrenceUntil',
+  recurrenceMaxOccurrences: 'recurrenceMaxOccurrences',
   deadline: 'deadline',
   deadlineText: 'deadlineText',
+  timezone: 'timezone',
+  snoozeUntil: 'snoozeUntil',
   submitTo: 'submitTo',
   submitChannel: 'submitChannel',
   applicableIdentities: 'applicableIdentities',
@@ -145,6 +152,7 @@ export const TaskScalarFieldEnum = {
   evidenceSnippet: 'evidenceSnippet',
   nextActionSuggestion: 'nextActionSuggestion',
   estimatedMinutes: 'estimatedMinutes',
+  completedAt: 'completedAt',
   priorityScore: 'priorityScore',
   priorityReason: 'priorityReason',
   createdAt: 'createdAt',
@@ -182,6 +190,19 @@ export const TaskProgressLogScalarFieldEnum = {
 } as const
 
 export type TaskProgressLogScalarFieldEnum = (typeof TaskProgressLogScalarFieldEnum)[keyof typeof TaskProgressLogScalarFieldEnum]
+
+
+export const DailyLogSnapshotScalarFieldEnum = {
+  id: 'id',
+  dateKey: 'dateKey',
+  mode: 'mode',
+  text: 'text',
+  metaJson: 'metaJson',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type DailyLogSnapshotScalarFieldEnum = (typeof DailyLogSnapshotScalarFieldEnum)[keyof typeof DailyLogSnapshotScalarFieldEnum]
 
 
 export const SortOrder = {

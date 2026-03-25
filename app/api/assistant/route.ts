@@ -30,6 +30,11 @@ const plannedActionSchema = z.union([
     type: z.literal("create_task"),
     sourceText: z.string(),
   }),
+  z.object({
+    type: z.literal("update_task_core"),
+    taskId: z.string(),
+    patch: z.record(z.string(), z.any()),
+  }),
 ]);
 
 const pendingActionSchema = z.object({
@@ -85,6 +90,14 @@ const historyItemSchema = z.object({
   content: z.string(),
 });
 
+const clarifyStateSchema = z.object({
+  type: z.literal("arrange_task_time"),
+  taskId: z.string().nullable().optional(),
+  hour: z.number().int().min(0).max(23).nullable().optional(),
+  minute: z.number().int().min(0).max(59).nullable().optional(),
+  turns: z.number().int().min(0).max(5).optional(),
+});
+
 const requestSchema = z.object({
   message: z.string().min(1),
   history: z.array(historyItemSchema).max(12).optional(),
@@ -93,6 +106,7 @@ const requestSchema = z.object({
       lastReferencedTaskId: z.string().nullable().optional(),
       pendingAction: pendingActionSchema.nullable().optional(),
       undoAction: undoActionSchema.nullable().optional(),
+      clarifyState: clarifyStateSchema.nullable().optional(),
     })
     .optional(),
 });

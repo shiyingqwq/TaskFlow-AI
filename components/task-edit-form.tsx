@@ -13,6 +13,7 @@ type Props = {
     id: string;
     title: string;
     description: string;
+    startAtISO: string | null;
     submitTo: string | null;
     submitChannel: string | null;
     applicableIdentities: string[];
@@ -21,8 +22,13 @@ type Props = {
     recurrenceDays: number[];
     recurrenceTargetCount: number;
     recurrenceLimit: number | null;
+    recurrenceStartISO: string | null;
+    recurrenceUntilISO: string | null;
+    recurrenceMaxOccurrences: number | null;
     deadlineText: string | null;
     deadlineISO: string | null;
+    timezone: string;
+    snoozeUntilISO: string | null;
     deliveryType: keyof typeof deliveryTypeLabels;
     requiresSignature: boolean;
     requiresStamp: boolean;
@@ -52,6 +58,7 @@ export function TaskEditForm({ task }: Props) {
   const [form, setForm] = useState({
     title: task.title,
     description: task.description,
+    startAtISO: isoToLocal(task.startAtISO),
     submitTo: task.submitTo ?? "",
     submitChannel: task.submitChannel ?? "",
     applicableIdentities: task.applicableIdentities.join("、"),
@@ -60,8 +67,13 @@ export function TaskEditForm({ task }: Props) {
     recurrenceDays: task.recurrenceDays,
     recurrenceTargetCount: task.recurrenceTargetCount,
     recurrenceLimit: task.recurrenceLimit ?? null,
+    recurrenceStartISO: isoToLocal(task.recurrenceStartISO),
+    recurrenceUntilISO: isoToLocal(task.recurrenceUntilISO),
+    recurrenceMaxOccurrences: task.recurrenceMaxOccurrences ?? null,
     deadlineText: task.deadlineText ?? "",
     deadlineISO: isoToLocal(task.deadlineISO),
+    timezone: task.timezone || "Asia/Shanghai",
+    snoozeUntilISO: isoToLocal(task.snoozeUntilISO),
     deliveryType: task.deliveryType,
     requiresSignature: task.requiresSignature,
     requiresStamp: task.requiresStamp,
@@ -93,7 +105,16 @@ export function TaskEditForm({ task }: Props) {
           .filter(Boolean),
         identityHint: form.identityHint || null,
         recurrenceLimit: form.recurrenceType === "limited" ? Number(form.recurrenceLimit || 1) : null,
+        recurrenceStartISO:
+          form.recurrenceType === "single" ? null : (form.recurrenceStartISO ? new Date(form.recurrenceStartISO).toISOString() : null),
+        recurrenceUntilISO:
+          form.recurrenceType === "single" ? null : (form.recurrenceUntilISO ? new Date(form.recurrenceUntilISO).toISOString() : null),
+        recurrenceMaxOccurrences:
+          form.recurrenceType === "single" ? null : (form.recurrenceMaxOccurrences ? Number(form.recurrenceMaxOccurrences) : null),
+        startAtISO: form.startAtISO ? new Date(form.startAtISO).toISOString() : null,
         deadlineISO: form.deadlineISO ? new Date(form.deadlineISO).toISOString() : null,
+        timezone: form.timezone.trim() || "Asia/Shanghai",
+        snoozeUntilISO: form.snoozeUntilISO ? new Date(form.snoozeUntilISO).toISOString() : null,
         nextCheckAt: form.nextCheckAt ? new Date(form.nextCheckAt).toISOString() : null,
         estimatedMinutes: form.estimatedMinutes ? Number(form.estimatedMinutes) : null,
         waitingFor: form.waitingReasonText || form.waitingFor || null,
@@ -209,7 +230,55 @@ export function TaskEditForm({ task }: Props) {
         </div>
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-2 scroll-mt-24" id="deadline-section">
+      {form.recurrenceType !== "single" ? (
+        <div className="grid gap-4 rounded-[20px] border border-[var(--line)] bg-white/70 p-4 md:grid-cols-3">
+          <label className="space-y-1 text-sm text-[var(--muted)]">
+            <span>重复开始时间</span>
+            <input
+              className="w-full rounded-2xl border border-[var(--line)] bg-white px-3 py-2 text-[var(--text)] outline-none focus:border-[var(--accent)]"
+              onChange={(event) => setForm((prev) => ({ ...prev, recurrenceStartISO: event.target.value }))}
+              type="datetime-local"
+              value={form.recurrenceStartISO}
+            />
+          </label>
+          <label className="space-y-1 text-sm text-[var(--muted)]">
+            <span>重复截止时间</span>
+            <input
+              className="w-full rounded-2xl border border-[var(--line)] bg-white px-3 py-2 text-[var(--text)] outline-none focus:border-[var(--accent)]"
+              onChange={(event) => setForm((prev) => ({ ...prev, recurrenceUntilISO: event.target.value }))}
+              type="datetime-local"
+              value={form.recurrenceUntilISO}
+            />
+          </label>
+          <label className="space-y-1 text-sm text-[var(--muted)]">
+            <span>最多生成次数</span>
+            <input
+              className="w-full rounded-2xl border border-[var(--line)] bg-white px-3 py-2 text-[var(--text)] outline-none focus:border-[var(--accent)]"
+              min={1}
+              onChange={(event) =>
+                setForm((prev) => ({
+                  ...prev,
+                  recurrenceMaxOccurrences: event.target.value ? Number(event.target.value) : null,
+                }))
+              }
+              placeholder="留空为不限制"
+              type="number"
+              value={form.recurrenceMaxOccurrences ?? ""}
+            />
+          </label>
+        </div>
+      ) : null}
+
+      <div className="grid gap-4 md:grid-cols-3 scroll-mt-24" id="deadline-section">
+        <label className="space-y-1 text-sm text-[var(--muted)]">
+          <span>开始时间</span>
+          <input
+            className="w-full rounded-2xl border border-[var(--line)] bg-white px-3 py-2 text-[var(--text)] outline-none focus:border-[var(--accent)]"
+            onChange={(event) => setForm((prev) => ({ ...prev, startAtISO: event.target.value }))}
+            type="datetime-local"
+            value={form.startAtISO}
+          />
+        </label>
         <label className="space-y-1 text-sm text-[var(--muted)]">
           <span>截止时间</span>
           <input
@@ -293,6 +362,24 @@ export function TaskEditForm({ task }: Props) {
             placeholder="例如 45"
             type="number"
             value={form.estimatedMinutes ?? ""}
+          />
+        </label>
+        <label className="space-y-1 text-sm text-[var(--muted)]">
+          <span>时区</span>
+          <input
+            className="w-full rounded-2xl border border-[var(--line)] bg-white px-3 py-2 text-[var(--text)] outline-none focus:border-[var(--accent)]"
+            onChange={(event) => setForm((prev) => ({ ...prev, timezone: event.target.value }))}
+            placeholder="例如 Asia/Shanghai"
+            value={form.timezone}
+          />
+        </label>
+        <label className="space-y-1 text-sm text-[var(--muted)]">
+          <span>稍后提醒到</span>
+          <input
+            className="w-full rounded-2xl border border-[var(--line)] bg-white px-3 py-2 text-[var(--text)] outline-none focus:border-[var(--accent)]"
+            onChange={(event) => setForm((prev) => ({ ...prev, snoozeUntilISO: event.target.value }))}
+            type="datetime-local"
+            value={form.snoozeUntilISO}
           />
         </label>
         <label className="space-y-1 text-sm text-[var(--muted)]">

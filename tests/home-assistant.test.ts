@@ -7,6 +7,7 @@ function createTask(overrides: Partial<{
   title: string;
   status: "ready" | "waiting" | "needs_review" | "in_progress" | "done";
   deadline: Date | null;
+  estimatedMinutes: number | null;
   submitTo: string | null;
   submitChannel: string | null;
   needsHumanReview: boolean;
@@ -23,6 +24,7 @@ function createTask(overrides: Partial<{
     title: overrides.title ?? "团支书填写入党积极分子名单表",
     status: overrides.status ?? "ready",
     deadline: overrides.deadline ?? new Date("2026-03-20T10:00:00.000Z"),
+    estimatedMinutes: overrides.estimatedMinutes ?? 45,
     submitTo: overrides.submitTo ?? "组织部",
     submitChannel: overrides.submitChannel ?? "邮箱",
     needsHumanReview: overrides.needsHumanReview ?? false,
@@ -259,5 +261,194 @@ describe("home assistant local planner", () => {
 
     expect(result?.reply).toContain("当前没有活跃任务");
     expect(result?.reply).toContain("都已经处理完成");
+  });
+
+  it("answers course-schedule questions with course and free-window context", () => {
+    const task = createTask();
+    const result = resolveLocalAssistantPlanForTest({
+      message: "今天课表和空档是什么？",
+      tasks: [task],
+      currentBestTask: task,
+      topTasksForToday: [task],
+      reviewTasks: [],
+      waitingTasks: [],
+      dueWaitingTasks: [],
+      courseContext: {
+        todayCourseSummary: "08:00-09:40 核医学@A101；14:00-15:40 内科学@B201",
+        todayFreeWindowSummary: "09:40-14:00，15:40-21:30",
+      },
+    });
+
+    expect(result?.actions).toEqual([]);
+    expect(result?.reply).toContain("今天课程");
+    expect(result?.reply).toContain("可执行空档");
+    expect(result?.reply).toContain("核医学");
+  });
+
+  it("maps schedule-arrangement commands to update_task_core action", () => {
+    const task = createTask({
+      id: "task-arrange",
+      title: "复习当天核医学课程",
+      deadline: new Date("2026-03-25T10:00:00.000Z"),
+      estimatedMinutes: 60,
+    });
+    const result = resolveLocalAssistantPlanForTest({
+      message: "把复习当天核医学课程安排到今天20:00",
+      tasks: [task],
+      currentBestTask: task,
+      topTasksForToday: [task],
+      reviewTasks: [],
+      waitingTasks: [],
+      dueWaitingTasks: [],
+    });
+
+    expect(result?.actions).toEqual([]);
+    expect(result?.pendingAction).toMatchObject({
+      type: "confirm_actions",
+      actions: [
+        {
+          type: "update_task_core",
+          taskId: "task-arrange",
+          patch: {
+            startAtISO: expect.any(String),
+            deadlineISO: expect.any(String),
+          },
+        },
+      ],
+    });
+    expect(result?.reply).toContain("联动将截止顺延");
+  });
+
+  it("asks a follow-up when arrangement lacks task or time, then keeps clarify context", () => {
+    const task = createTask({
+      id: "task-arrange-followup",
+      title: "复习当天核医学课程",
+    });
+    const result = resolveLocalAssistantPlanForTest({
+      message: "帮我安排一下",
+      tasks: [task],
+      currentBestTask: task,
+      topTasksForToday: [task],
+      reviewTasks: [],
+      waitingTasks: [],
+      dueWaitingTasks: [],
+    });
+
+    expect(result?.actions).toEqual([]);
+    expect(result?.reply).toContain("请先补充");
+    expect(result?.clarifyState).toMatchObject({
+      type: "arrange_task_time",
+      taskId: "task-arrange-followup",
+      hour: null,
+      minute: null,
+    });
+  });
+
+  it("auto-selects current best task for arrangement when task title is omitted", () => {
+    const task = createTask({
+      id: "task-auto-arrange",
+      title: "复习当天核医学课程",
+      deadline: new Date("2026-03-25T10:00:00.000Z"),
+    });
+    const result = resolveLocalAssistantPlanForTest({
+      message: "安排到20:00",
+      tasks: [task],
+      currentBestTask: task,
+      topTasksForToday: [task],
+      reviewTasks: [],
+      waitingTasks: [],
+      dueWaitingTasks: [],
+    });
+
+    expect(result?.actions).toEqual([]);
+    expect(result?.pendingAction).toMatchObject({
+      type: "confirm_actions",
+      actions: [
+        {
+          type: "update_task_core",
+          taskId: "task-auto-arrange",
+          patch: {
+            startAtISO: expect.any(String),
+            deadlineISO: expect.any(String),
+          },
+        },
+      ],
+    });
+    expect(result?.clarifyState).toBeNull();
+  });
+
+  it("builds chained actions in one turn for arrange-plus-status commands", () => {
+    const task = createTask({
+      id: "task-chain",
+      title: "复习当天核医学课程",
+      deadline: new Date("2026-03-25T10:00:00.000Z"),
+      estimatedMinutes: 30,
+    });
+    const result = resolveLocalAssistantPlanForTest({
+      message: "把复习当天核医学课程安排到20:00并标记为进行中",
+      tasks: [task],
+      currentBestTask: task,
+      topTasksForToday: [task],
+      reviewTasks: [],
+      waitingTasks: [],
+      dueWaitingTasks: [],
+    });
+
+    expect(result?.actions).toEqual([]);
+    expect(result?.pendingAction?.actions).toHaveLength(2);
+    expect(result?.pendingAction?.actions[0]).toMatchObject({
+      type: "update_task_core",
+      taskId: "task-chain",
+      patch: {
+        startAtISO: expect.any(String),
+        deadlineISO: expect.any(String),
+      },
+    });
+    expect(result?.pendingAction?.actions[1]).toMatchObject({
+      type: "update_status",
+      taskId: "task-chain",
+      status: "in_progress",
+    });
+  });
+
+  it("completes arrangement after follow-up clarification", () => {
+    const task = createTask({
+      id: "task-clarify-complete",
+      title: "复习当天核医学课程",
+      deadline: new Date("2026-03-25T10:00:00.000Z"),
+    });
+    const result = resolveLocalAssistantPlanForTest({
+      message: "复习当天核医学课程",
+      tasks: [task],
+      currentBestTask: task,
+      topTasksForToday: [task],
+      reviewTasks: [],
+      waitingTasks: [],
+      dueWaitingTasks: [],
+      context: {
+        clarifyState: {
+          type: "arrange_task_time",
+          taskId: null,
+          hour: 19,
+          minute: 0,
+        },
+      },
+    });
+
+    expect(result?.actions).toEqual([]);
+    expect(result?.pendingAction).toMatchObject({
+      type: "confirm_actions",
+      actions: [
+        {
+          type: "update_task_core",
+          taskId: "task-clarify-complete",
+          patch: {
+            startAtISO: expect.any(String),
+            deadlineISO: expect.any(String),
+          },
+        },
+      ],
+    });
+    expect(result?.clarifyState).toBeNull();
   });
 });

@@ -95,12 +95,18 @@ model Task {
   title               String
   description         String
   taskType            TaskType
+  startAt             DateTime?
   recurrenceType      String        @default("single")
   recurrenceDays      Json          @default("[]")
   recurrenceTargetCount Int         @default(1)
   recurrenceLimit     Int?
+  recurrenceStartAt   DateTime?
+  recurrenceUntil     DateTime?
+  recurrenceMaxOccurrences Int?
   deadline            DateTime?
   deadlineText        String?
+  timezone            String        @default("Asia/Shanghai")
+  snoozeUntil         DateTime?
   submitTo            String?
   submitChannel       String?
   applicableIdentities Json      @default("[]")
@@ -128,6 +134,7 @@ model Task {
   evidenceSnippet     String
   nextActionSuggestion String
   estimatedMinutes    Int?
+  completedAt         DateTime?
   priorityScore       Int           @default(0)
   priorityReason      String        @default("")
   createdAt           DateTime      @default(now())
@@ -166,4 +173,17 @@ model TaskProgressLog {
   task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@index([taskId, completedAt])
+}
+
+model DailyLogSnapshot {
+  id        String   @id
+  dateKey   String
+  mode      String
+  text      String
+  metaJson  String   @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([dateKey, mode], map: "DailyLogSnapshot_date_mode_unique")
+  @@map("DailyLogSnapshot")
 }

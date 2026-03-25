@@ -164,7 +164,7 @@ export function CourseWeekTable({
         <p className="mt-4 rounded-2xl bg-white/75 px-4 py-3 text-sm text-[var(--muted)] ring-1 ring-[var(--line)]">还没有课程数据。先到设置页导入或手动填写课表。</p>
       ) : (
         <div className="mt-4 overflow-x-auto">
-          <table className="table-fixed min-w-[668px] border-separate border-spacing-0 text-sm">
+          <table className="mx-auto table-fixed w-max min-w-[668px] border-separate border-spacing-0 text-sm">
             <colgroup>
               <col style={{ width: "74px" }} />
               {displayWeekdays.map((weekday) => (

@@ -395,7 +395,8 @@ export const ModelName = {
   Task: 'Task',
   Dependency: 'Dependency',
   ActionLog: 'ActionLog',
-  TaskProgressLog: 'TaskProgressLog'
+  TaskProgressLog: 'TaskProgressLog',
+  DailyLogSnapshot: 'DailyLogSnapshot'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -411,7 +412,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "source" | "appSetting" | "task" | "dependency" | "actionLog" | "taskProgressLog"
+    modelProps: "source" | "appSetting" | "task" | "dependency" | "actionLog" | "taskProgressLog" | "dailyLogSnapshot"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -859,6 +860,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    DailyLogSnapshot: {
+      payload: Prisma.$DailyLogSnapshotPayload<ExtArgs>
+      fields: Prisma.DailyLogSnapshotFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.DailyLogSnapshotFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DailyLogSnapshotPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.DailyLogSnapshotFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DailyLogSnapshotPayload>
+        }
+        findFirst: {
+          args: Prisma.DailyLogSnapshotFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DailyLogSnapshotPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.DailyLogSnapshotFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DailyLogSnapshotPayload>
+        }
+        findMany: {
+          args: Prisma.DailyLogSnapshotFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DailyLogSnapshotPayload>[]
+        }
+        create: {
+          args: Prisma.DailyLogSnapshotCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DailyLogSnapshotPayload>
+        }
+        createMany: {
+          args: Prisma.DailyLogSnapshotCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.DailyLogSnapshotCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DailyLogSnapshotPayload>[]
+        }
+        delete: {
+          args: Prisma.DailyLogSnapshotDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DailyLogSnapshotPayload>
+        }
+        update: {
+          args: Prisma.DailyLogSnapshotUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DailyLogSnapshotPayload>
+        }
+        deleteMany: {
+          args: Prisma.DailyLogSnapshotDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.DailyLogSnapshotUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.DailyLogSnapshotUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DailyLogSnapshotPayload>[]
+        }
+        upsert: {
+          args: Prisma.DailyLogSnapshotUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$DailyLogSnapshotPayload>
+        }
+        aggregate: {
+          args: Prisma.DailyLogSnapshotAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateDailyLogSnapshot>
+        }
+        groupBy: {
+          args: Prisma.DailyLogSnapshotGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.DailyLogSnapshotGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.DailyLogSnapshotCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.DailyLogSnapshotCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -937,12 +1012,18 @@ export const TaskScalarFieldEnum = {
   title: 'title',
   description: 'description',
   taskType: 'taskType',
+  startAt: 'startAt',
   recurrenceType: 'recurrenceType',
   recurrenceDays: 'recurrenceDays',
   recurrenceTargetCount: 'recurrenceTargetCount',
   recurrenceLimit: 'recurrenceLimit',
+  recurrenceStartAt: 'recurrenceStartAt',
+  recurrenceUntil: 'recurrenceUntil',
+  recurrenceMaxOccurrences: 'recurrenceMaxOccurrences',
   deadline: 'deadline',
   deadlineText: 'deadlineText',
+  timezone: 'timezone',
+  snoozeUntil: 'snoozeUntil',
   submitTo: 'submitTo',
   submitChannel: 'submitChannel',
   applicableIdentities: 'applicableIdentities',
@@ -970,6 +1051,7 @@ export const TaskScalarFieldEnum = {
   evidenceSnippet: 'evidenceSnippet',
   nextActionSuggestion: 'nextActionSuggestion',
   estimatedMinutes: 'estimatedMinutes',
+  completedAt: 'completedAt',
   priorityScore: 'priorityScore',
   priorityReason: 'priorityReason',
   createdAt: 'createdAt',
@@ -1007,6 +1089,19 @@ export const TaskProgressLogScalarFieldEnum = {
 } as const
 
 export type TaskProgressLogScalarFieldEnum = (typeof TaskProgressLogScalarFieldEnum)[keyof typeof TaskProgressLogScalarFieldEnum]
+
+
+export const DailyLogSnapshotScalarFieldEnum = {
+  id: 'id',
+  dateKey: 'dateKey',
+  mode: 'mode',
+  text: 'text',
+  metaJson: 'metaJson',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type DailyLogSnapshotScalarFieldEnum = (typeof DailyLogSnapshotScalarFieldEnum)[keyof typeof DailyLogSnapshotScalarFieldEnum]
 
 
 export const SortOrder = {
@@ -1246,6 +1341,7 @@ export type GlobalOmitConfig = {
   dependency?: Prisma.DependencyOmit
   actionLog?: Prisma.ActionLogOmit
   taskProgressLog?: Prisma.TaskProgressLogOmit
+  dailyLogSnapshot?: Prisma.DailyLogSnapshotOmit
 }
 
 /* Types for Logging */

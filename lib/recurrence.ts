@@ -13,6 +13,9 @@ type RecurrenceInput = {
   recurrenceDays?: unknown;
   recurrenceTargetCount?: number | null;
   recurrenceLimit?: number | null;
+  recurrenceStartAt?: string | Date | null;
+  recurrenceUntil?: string | Date | null;
+  recurrenceMaxOccurrences?: number | null;
   progressLogs?: ProgressLogInput[];
 };
 
@@ -166,18 +169,26 @@ export function getRecurrenceSummary(task: RecurrenceInput) {
   const recurrenceDays = normalizeRecurrenceDays(task.recurrenceDays);
   const recurrenceTargetCount = normalizePositiveInt(task.recurrenceTargetCount, 1);
   const recurrenceLimit = task.recurrenceLimit ? normalizePositiveInt(task.recurrenceLimit, 1) : null;
+  const recurrenceMaxOccurrences = task.recurrenceMaxOccurrences ? normalizePositiveInt(task.recurrenceMaxOccurrences, 1) : null;
+  const recurrenceStartLabel = task.recurrenceStartAt ? toTaipei(task.recurrenceStartAt)?.format("M/D HH:mm") ?? null : null;
+  const recurrenceUntilLabel = task.recurrenceUntil ? toTaipei(task.recurrenceUntil)?.format("M/D HH:mm") ?? null : null;
+  const boundaryNotes = [
+    recurrenceStartLabel ? `起始 ${recurrenceStartLabel}` : null,
+    recurrenceUntilLabel ? `截止 ${recurrenceUntilLabel}` : null,
+    recurrenceMaxOccurrences ? `最多 ${recurrenceMaxOccurrences} 次` : null,
+  ].filter(Boolean);
 
   if (recurrenceType === "weekly") {
     const labels = recurrenceDays.map((day) => recurrenceWeekdayLabels[day as keyof typeof recurrenceWeekdayLabels]).filter(Boolean);
-    return `${recurrenceTypeLabels.weekly}${labels.length > 0 ? ` · ${labels.join(" / ")}` : ""} · 每次 ${recurrenceTargetCount}`;
+    return `${recurrenceTypeLabels.weekly}${labels.length > 0 ? ` · ${labels.join(" / ")}` : ""} · 每次 ${recurrenceTargetCount}${boundaryNotes.length > 0 ? ` · ${boundaryNotes.join(" · ")}` : ""}`;
   }
 
   if (recurrenceType === "limited") {
-    return `${recurrenceTypeLabels.limited} · 共 ${recurrenceLimit ?? 1} 次 · 每次 ${recurrenceTargetCount}`;
+    return `${recurrenceTypeLabels.limited} · 共 ${recurrenceLimit ?? 1} 次 · 每次 ${recurrenceTargetCount}${boundaryNotes.length > 0 ? ` · ${boundaryNotes.join(" · ")}` : ""}`;
   }
 
   if (recurrenceType === "daily") {
-    return `${recurrenceTypeLabels.daily} · 每日 ${recurrenceTargetCount}`;
+    return `${recurrenceTypeLabels.daily} · 每日 ${recurrenceTargetCount}${boundaryNotes.length > 0 ? ` · ${boundaryNotes.join(" · ")}` : ""}`;
   }
 
   return recurrenceTargetCount > 1 ? `${recurrenceTypeLabels.single} · 本次 ${recurrenceTargetCount}` : recurrenceTypeLabels.single;

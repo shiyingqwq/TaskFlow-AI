@@ -6,6 +6,7 @@ import type { Dependency, Source, Task, TaskProgressLog } from "@/generated/pris
 
 import { parseSourceIntoTasks, ParsedSourceInput, enrichTasksForCreation } from "@/lib/parser";
 import type { ExtractedTaskInput } from "@/lib/parser/schema";
+import { APP_TIMEZONE } from "@/lib/constants";
 import { buildFocusSummaryFallback, generateFocusSummary } from "@/lib/focus-summary";
 import { matchesActiveIdentities, normalizeActiveIdentities, normalizeApplicableIdentities, normalizeIdentityHint } from "@/lib/identity";
 import { getCurrentCycleLogIds } from "@/lib/recurrence";
@@ -45,11 +46,30 @@ async function sanitizeTaskJsonColumns() {
   `);
 }
 
+function normalizeTimezone(value: string | null | undefined) {
+  const normalized = String(value || "").trim();
+  return normalized.length > 0 ? normalized.slice(0, 64) : APP_TIMEZONE;
+}
+
+function normalizeDateOrNull(value: string | Date | null | undefined) {
+  if (!value) {
+    return null;
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 type ReviewableTaskInput = {
   taskType: TaskType | string;
   deliveryType: DeliveryType | string;
+  startAt?: Date | string | null;
   deadline: Date | string | null;
   deadlineText: string | null;
+  recurrenceStartAt?: Date | string | null;
+  recurrenceUntil?: Date | string | null;
+  recurrenceMaxOccurrences?: number | null;
+  timezone?: string | null;
+  snoozeUntil?: Date | string | null;
   recurrenceType: string;
   recurrenceDays: unknown;
   recurrenceTargetCount: number;
@@ -71,6 +91,7 @@ type ReviewableTaskInput = {
 type TaskCoreUpdateInput = {
   title: string;
   description: string;
+  startAt: string | Date | null;
   submitTo: string | null;
   submitChannel: string | null;
   applicableIdentities: string[];
@@ -79,8 +100,13 @@ type TaskCoreUpdateInput = {
   recurrenceDays: number[];
   recurrenceTargetCount: number;
   recurrenceLimit: number | null;
+  recurrenceStartAt: string | Date | null;
+  recurrenceUntil: string | Date | null;
+  recurrenceMaxOccurrences: number | null;
   deadlineText: string | null;
   deadline: string | Date | null;
+  timezone: string;
+  snoozeUntil: string | Date | null;
   deliveryType: DeliveryType;
   requiresSignature: boolean;
   requiresStamp: boolean;
@@ -317,6 +343,7 @@ export async function recalculateAllPriorities(input?: { taskIds?: string[]; exp
           id: task.id,
           title: task.title,
           status: statusAfterReview,
+          startAt: task.startAt,
           deadline: task.deadline,
           taskType: task.taskType,
           recurrenceType: task.recurrenceType,
@@ -332,6 +359,7 @@ export async function recalculateAllPriorities(input?: { taskIds?: string[]; exp
           waitingReasonType: waiting.waitingReasonType,
           waitingReasonText: waiting.waitingReasonText,
           nextCheckAt: waiting.nextCheckAt,
+          snoozeUntil: task.snoozeUntil,
           nextActionSuggestion: task.nextActionSuggestion,
           successorCount: task.successorLinks.length,
           blockingPredecessorTitles: getBlockingPredecessorTitles(task),
@@ -445,17 +473,24 @@ function buildAssistantFallbackTask(rawText: string): ExtractedTaskInput {
   const inferredDeadline = normalizeDeadlineInput({
     deadlineText: compact,
   });
+  const weeklyRecurrenceDays = inferWeeklyRecurrenceDaysFromText(compact);
 
   return {
     title: compact.slice(0, 36) || "待办事项",
     description: "",
     taskType: "followup",
-    recurrenceType: "single",
-    recurrenceDays: [],
+    recurrenceType: weeklyRecurrenceDays ? "weekly" : "single",
+    recurrenceDays: weeklyRecurrenceDays ?? [],
     recurrenceTargetCount: 1,
     recurrenceLimit: null,
+    recurrenceStartISO: null,
+    recurrenceUntilISO: null,
+    recurrenceMaxOccurrences: null,
     deadlineISO: inferredDeadline.deadlineISO,
     deadlineText: inferredDeadline.deadlineText,
+    startAtISO: null,
+    snoozeUntilISO: null,
+    timezone: APP_TIMEZONE,
     submitTo: null,
     submitChannel: null,
     applicableIdentities: [],
@@ -474,6 +509,60 @@ function buildAssistantFallbackTask(rawText: string): ExtractedTaskInput {
     nextActionSuggestion: "先确认这条任务的要求与截止时间，再推进第一步。",
     estimatedMinutes: null,
   };
+}
+
+export function inferWeeklyRecurrenceDaysFromText(text: string) {
+  const normalized = text.replace(/\s+/g, "");
+  if (!/(每周|每星期|每礼拜|每逢)/.test(normalized)) {
+    return null;
+  }
+
+  const weekdayMap: Record<string, number> = {
+    一: 1,
+    二: 2,
+    三: 3,
+    四: 4,
+    五: 5,
+    六: 6,
+    日: 0,
+    天: 0,
+  };
+
+  const matches = [...normalized.matchAll(/(?:周|星期|礼拜)([一二三四五六日天])/g)];
+  if (matches.length === 0) {
+    return null;
+  }
+
+  const days = [...new Set(matches.map((item) => weekdayMap[item[1]]).filter((item): item is number => Number.isInteger(item)))].sort((a, b) => a - b);
+  return days.length > 0 ? days : null;
+}
+
+function applyAssistantRecurrenceHint(taskInput: CreationTaskInput, weeklyRecurrenceDays: number[] | null): CreationTaskInput {
+  if (!weeklyRecurrenceDays || weeklyRecurrenceDays.length === 0) {
+    return taskInput;
+  }
+
+  if (taskInput.recurrenceType === "weekly") {
+    if (taskInput.recurrenceDays.length > 0) {
+      return taskInput;
+    }
+    return {
+      ...taskInput,
+      recurrenceDays: weeklyRecurrenceDays,
+    };
+  }
+
+  if (taskInput.recurrenceType === "single") {
+    return {
+      ...taskInput,
+      recurrenceType: "weekly" as CreationTaskInput["recurrenceType"],
+      recurrenceDays: weeklyRecurrenceDays,
+      recurrenceTargetCount: 1,
+      recurrenceLimit: null,
+    };
+  }
+
+  return taskInput;
 }
 
 async function persistSourceAndTaskInputs(
@@ -543,12 +632,18 @@ async function persistSourceAndTaskInputs(
           title: taskInput.title,
           description: taskInput.description,
           taskType: taskInput.taskType,
+          startAt: normalizeDateOrNull(taskInput.startAtISO),
           recurrenceType: taskInput.recurrenceType,
           recurrenceDays: taskInput.recurrenceDays,
           recurrenceTargetCount: taskInput.recurrenceTargetCount,
           recurrenceLimit: taskInput.recurrenceLimit,
+          recurrenceStartAt: normalizeDateOrNull(taskInput.recurrenceStartISO),
+          recurrenceUntil: normalizeDateOrNull(taskInput.recurrenceUntilISO),
+          recurrenceMaxOccurrences: taskInput.recurrenceMaxOccurrences,
           deadline: normalizedDeadline.deadline,
           deadlineText: normalizedDeadline.deadlineText,
+          timezone: normalizeTimezone(taskInput.timezone),
+          snoozeUntil: normalizeDateOrNull(taskInput.snoozeUntilISO),
           submitTo: taskInput.submitTo,
           submitChannel: taskInput.submitChannel,
           applicableIdentities: normalizeApplicableIdentities(taskInput.applicableIdentities),
@@ -571,6 +666,12 @@ async function persistSourceAndTaskInputs(
               waitingReasonType: waiting.waitingReasonType,
               waitingReasonText: waiting.waitingReasonText,
               nextCheckAt: waiting.nextCheckAt,
+              startAt: taskInput.startAtISO,
+              recurrenceStartAt: taskInput.recurrenceStartISO,
+              recurrenceUntil: taskInput.recurrenceUntilISO,
+              recurrenceMaxOccurrences: taskInput.recurrenceMaxOccurrences,
+              timezone: taskInput.timezone,
+              snoozeUntil: taskInput.snoozeUntilISO,
               status: taskInput.status,
             },
             review.needsHumanReview,
@@ -810,6 +911,7 @@ function buildPreviewTasks(
       id: `preview-${index}`,
       title: task.title,
       status: task.status,
+      startAt: task.startAtISO,
       deadline: task.deadlineISO,
       taskType: task.taskType,
       recurrenceType: task.recurrenceType,
@@ -825,6 +927,7 @@ function buildPreviewTasks(
       waitingReasonType: task.waitingReasonType ?? null,
       waitingReasonText: task.waitingReasonText ?? null,
       nextCheckAt: task.nextCheckAt ?? null,
+      snoozeUntil: task.snoozeUntilISO,
       nextActionSuggestion: task.nextActionSuggestion,
       successorCount: successorTitles.length,
       blockingPredecessorTitles,
@@ -896,6 +999,7 @@ export async function createAssistantTask(rawText: string, activeIdentities: str
   if (!compact) {
     throw new Error("Assistant task text is empty");
   }
+  const weeklyRecurrenceDays = inferWeeklyRecurrenceDaysFromText(compact);
 
   const parsedInput: ParsedSourceInput = {
     type: "text",
@@ -928,21 +1032,24 @@ export async function createAssistantTask(rawText: string, activeIdentities: str
       sourceSummary: parsed.tasks.length > 0 ? parsed.sourceSummary : `首页 AI 助手记录：${compact.slice(0, 90)}`,
       dependencies: parsed.tasks.length > 0 ? parsed.dependencies : [],
     },
-    taskInputs.map((taskInput) => ({
-      ...taskInput,
+    taskInputs.map((taskInput) => {
+      const normalizedTaskInput = applyAssistantRecurrenceHint(taskInput, weeklyRecurrenceDays);
+      return {
+      ...normalizedTaskInput,
       status: inferTaskStatus({
-        confidence: taskInput.confidence,
-        deadline: taskInput.deadlineISO,
-        deadlineText: taskInput.deadlineText,
-        taskType: taskInput.taskType,
-        deliveryType: taskInput.deliveryType,
-        dependsOnExternal: taskInput.dependsOnExternal,
-        waitingFor: taskInput.waitingFor,
-        waitingReasonType: taskInput.waitingReasonType ?? null,
-        waitingReasonText: taskInput.waitingReasonText ?? null,
-        nextCheckAt: taskInput.nextCheckAt ?? null,
+        confidence: normalizedTaskInput.confidence,
+        deadline: normalizedTaskInput.deadlineISO,
+        deadlineText: normalizedTaskInput.deadlineText,
+        taskType: normalizedTaskInput.taskType,
+        deliveryType: normalizedTaskInput.deliveryType,
+        dependsOnExternal: normalizedTaskInput.dependsOnExternal,
+        waitingFor: normalizedTaskInput.waitingFor,
+        waitingReasonType: normalizedTaskInput.waitingReasonType ?? null,
+        waitingReasonText: normalizedTaskInput.waitingReasonText ?? null,
+        nextCheckAt: normalizedTaskInput.nextCheckAt ?? null,
       }),
-    })),
+    };
+    }),
   );
 }
 
@@ -960,6 +1067,14 @@ export async function updateTaskCore(taskId: string, data: TaskCoreUpdateInput) 
     deadlineISO: data.deadline,
     deadlineText: data.deadlineText,
   });
+  const startAt = normalizeDateOrNull(data.startAt);
+  const recurrenceStartAtRaw = normalizeDateOrNull(data.recurrenceStartAt);
+  const recurrenceUntilRaw = normalizeDateOrNull(data.recurrenceUntil);
+  const snoozeUntil = normalizeDateOrNull(data.snoozeUntil);
+  const timezone = normalizeTimezone(data.timezone);
+  const recurrenceStartAt = data.recurrenceType === "single" ? null : recurrenceStartAtRaw ?? startAt;
+  const recurrenceUntil = data.recurrenceType === "single" ? null : recurrenceUntilRaw;
+  const recurrenceMaxOccurrences = data.recurrenceType === "single" ? null : data.recurrenceMaxOccurrences;
   const waiting = normalizeWaitingReasonInput({
     waitingFor: data.waitingFor,
     waitingReasonType: data.waitingReasonType,
@@ -985,32 +1100,50 @@ export async function updateTaskCore(taskId: string, data: TaskCoreUpdateInput) 
     confidence: existing.confidence,
     description: data.description,
   });
-
-  const task = await prisma.task.update({
-    where: { id: taskId },
-    data: {
+  const nextStatus = resolveStatusForPersistence(
+    {
       ...data,
-      applicableIdentities: normalizeApplicableIdentities(data.applicableIdentities),
-      identityHint: normalizeIdentityHint(data.identityHint),
-      deadline: normalizedDeadline.deadline,
+      deadline: normalizedDeadline.deadlineISO,
       deadlineText: normalizedDeadline.deadlineText,
       waitingFor: waiting.waitingFor,
       waitingReasonType: waiting.waitingReasonType,
       waitingReasonText: waiting.waitingReasonText,
       nextCheckAt: waiting.nextCheckAt,
-      status: resolveStatusForPersistence(
-        {
-          ...data,
-          deadline: normalizedDeadline.deadlineISO,
-          deadlineText: normalizedDeadline.deadlineText,
-          waitingFor: waiting.waitingFor,
-          waitingReasonType: waiting.waitingReasonType,
-          waitingReasonText: waiting.waitingReasonText,
-          nextCheckAt: waiting.nextCheckAt,
-          confidence: existing.confidence,
-        },
-        review.needsHumanReview,
-      ),
+      startAt,
+      recurrenceStartAt,
+      recurrenceUntil,
+      recurrenceMaxOccurrences,
+      timezone,
+      snoozeUntil,
+      confidence: existing.confidence,
+    },
+    review.needsHumanReview,
+  );
+  const completedAt =
+    nextStatus === "done"
+      ? existing.completedAt ?? new Date()
+      : null;
+
+  const task = await prisma.task.update({
+    where: { id: taskId },
+    data: {
+      ...data,
+      startAt,
+      applicableIdentities: normalizeApplicableIdentities(data.applicableIdentities),
+      identityHint: normalizeIdentityHint(data.identityHint),
+      recurrenceStartAt,
+      recurrenceUntil,
+      recurrenceMaxOccurrences,
+      deadline: normalizedDeadline.deadline,
+      deadlineText: normalizedDeadline.deadlineText,
+      timezone,
+      snoozeUntil,
+      waitingFor: waiting.waitingFor,
+      waitingReasonType: waiting.waitingReasonType,
+      waitingReasonText: waiting.waitingReasonText,
+      nextCheckAt: waiting.nextCheckAt,
+      status: nextStatus,
+      completedAt,
       needsHumanReview: review.needsHumanReview,
       reviewResolved: false,
       reviewReasons: review.reviewReasons,
@@ -1059,6 +1192,7 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus, note?
     where: { id: taskId },
     data: {
       status: normalizedStatus,
+      completedAt: normalizedStatus === "done" ? existing.completedAt ?? new Date() : null,
       ...(normalizedStatus === "ignored"
         ? {
             needsHumanReview: false,

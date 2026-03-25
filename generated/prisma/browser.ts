@@ -47,3 +47,8 @@ export type ActionLog = Prisma.ActionLogModel
  * 
  */
 export type TaskProgressLog = Prisma.TaskProgressLogModel
+/**
+ * Model DailyLogSnapshot
+ * 
+ */
+export type DailyLogSnapshot = Prisma.DailyLogSnapshotModel

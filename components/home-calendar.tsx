@@ -6,18 +6,42 @@ import type { Task } from "@/generated/prisma/client";
 
 import { nowInTaipei, toTaipei } from "@/lib/time";
 
-type CalendarTask = Pick<Task, "id" | "title" | "status" | "deadline" | "nextCheckAt">;
+type CalendarTask = Pick<
+  Task,
+  | "id"
+  | "title"
+  | "status"
+  | "deadline"
+  | "nextCheckAt"
+  | "recurrenceType"
+  | "recurrenceDays"
+  | "recurrenceStartAt"
+  | "recurrenceUntil"
+  | "recurrenceMaxOccurrences"
+  | "startAt"
+  | "createdAt"
+>;
 
 type CalendarEvent = {
   taskId: string;
   title: string;
-  kind: "deadline" | "follow_up";
+  kind: "deadline" | "follow_up" | "recurrence";
   atLabel: string;
   status: CalendarTask["status"];
   isCompleted: boolean;
 };
 
 const weekdayLabels = ["一", "二", "三", "四", "五", "六", "日"];
+
+function normalizeRecurrenceDays(raw: unknown) {
+  if (!Array.isArray(raw)) {
+    return [] as number[];
+  }
+  const days = raw
+    .map((item) => Number(item))
+    .filter((item) => Number.isInteger(item) && item >= 0 && item <= 6);
+  return [...new Set(days)];
+}
 
 function buildCalendarDays(tasks: CalendarTask[]) {
   const base = nowInTaipei();
@@ -29,13 +53,21 @@ function buildCalendarDays(tasks: CalendarTask[]) {
   const rangeEnd = monthEnd.add(endOffset, "day");
 
   const eventMap = new Map<string, CalendarEvent[]>();
+  const hasEvent = (dayKey: string, taskId: string, kind?: CalendarEvent["kind"]) =>
+    (eventMap.get(dayKey) ?? []).some((item) => item.taskId === taskId && (kind ? item.kind === kind : true));
+  const pushEvent = (dayKey: string, event: CalendarEvent) => {
+    const events = eventMap.get(dayKey) ?? [];
+    if (!events.some((item) => item.taskId === event.taskId && item.kind === event.kind)) {
+      events.push(event);
+      eventMap.set(dayKey, events);
+    }
+  };
 
   for (const task of tasks) {
     const deadline = toTaipei(task.deadline);
     if (deadline && deadline.isSame(base, "month")) {
       const key = deadline.format("YYYY-MM-DD");
-      const events = eventMap.get(key) ?? [];
-      events.push({
+      pushEvent(key, {
         taskId: task.id,
         title: task.title,
         kind: "deadline",
@@ -43,14 +75,12 @@ function buildCalendarDays(tasks: CalendarTask[]) {
         status: task.status,
         isCompleted: ["done", "submitted"].includes(task.status),
       });
-      eventMap.set(key, events);
     }
 
     const followUp = toTaipei(task.nextCheckAt);
     if (followUp && followUp.isSame(base, "month")) {
       const key = followUp.format("YYYY-MM-DD");
-      const events = eventMap.get(key) ?? [];
-      events.push({
+      pushEvent(key, {
         taskId: task.id,
         title: task.title,
         kind: "follow_up",
@@ -58,7 +88,51 @@ function buildCalendarDays(tasks: CalendarTask[]) {
         status: task.status,
         isCompleted: ["done", "submitted"].includes(task.status),
       });
-      eventMap.set(key, events);
+    }
+
+    if (task.recurrenceType === "daily" || task.recurrenceType === "weekly") {
+      const recurrenceStart = toTaipei(task.recurrenceStartAt) ?? toTaipei(task.startAt) ?? toTaipei(task.createdAt) ?? base.startOf("day");
+      const recurrenceEnd = toTaipei(task.recurrenceUntil) ?? monthEnd.endOf("day");
+      const activeStart = recurrenceStart.isAfter(monthStart.startOf("day")) ? recurrenceStart.startOf("day") : monthStart.startOf("day");
+      const activeEnd = recurrenceEnd.isBefore(monthEnd.endOf("day")) ? recurrenceEnd.endOf("day") : monthEnd.endOf("day");
+
+      if (!activeStart.isAfter(activeEnd)) {
+        const configuredDays = normalizeRecurrenceDays(task.recurrenceDays);
+        const weeklyDays =
+          task.recurrenceType === "weekly"
+            ? (configuredDays.length > 0 ? configuredDays : [recurrenceStart.day()])
+            : [];
+        let emitted = 0;
+        let cursor = activeStart;
+
+        while (cursor.isBefore(activeEnd) || cursor.isSame(activeEnd, "day")) {
+          const isActiveDay =
+            task.recurrenceType === "daily" ||
+            (task.recurrenceType === "weekly" && weeklyDays.includes(cursor.day()));
+
+          if (isActiveDay) {
+            emitted += 1;
+            if (!task.recurrenceMaxOccurrences || emitted <= task.recurrenceMaxOccurrences) {
+              const key = cursor.format("YYYY-MM-DD");
+              if (!hasEvent(key, task.id, "deadline")) {
+                pushEvent(key, {
+                  taskId: task.id,
+                  title: task.title,
+                  kind: "recurrence",
+                  atLabel: "重复",
+                  status: task.status,
+                  isCompleted: ["done", "submitted"].includes(task.status),
+                });
+              }
+            }
+          }
+
+          if (task.recurrenceMaxOccurrences && emitted >= task.recurrenceMaxOccurrences) {
+            break;
+          }
+          cursor = cursor.add(1, "day");
+        }
+      }
     }
   }
 
@@ -111,11 +185,12 @@ export function HomeCalendar({ tasks }: { tasks: CalendarTask[] }) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h3 className="text-2xl font-semibold">本月日历</h3>
-          <p className="mt-2 text-sm text-[var(--muted)]">把截止日和等待回看日放到同一张月历里，少在列表里来回找。</p>
+          <p className="mt-2 text-sm text-[var(--muted)]">把截止日、重复日和等待回看日放到同一张月历里，少在列表里来回找。</p>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--muted)]">
           <span>{calendar.monthLabel}</span>
           <span className="rounded-full bg-rose-100 px-2.5 py-1 text-rose-700">截止日</span>
+          <span className="rounded-full bg-amber-100 px-2.5 py-1 text-amber-700">重复日</span>
           <span className="rounded-full bg-sky-100 px-2.5 py-1 text-sky-700">回看日</span>
           <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-zinc-600">已完成</span>
         </div>
@@ -151,12 +226,14 @@ export function HomeCalendar({ tasks }: { tasks: CalendarTask[] }) {
             {(() => {
               const pendingDeadlineCount = day.events.filter((event) => event.kind === "deadline" && !event.isCompleted).length;
               const followUpCount = day.events.filter((event) => event.kind === "follow_up" && !event.isCompleted).length;
+              const recurrenceCount = day.events.filter((event) => event.kind === "recurrence" && !event.isCompleted).length;
               const completedCount = day.events.filter((event) => event.isCompleted).length;
               const headerMarkers = [
                 pendingDeadlineCount > 0 ? "deadline" : null,
                 followUpCount > 0 ? "follow_up" : null,
+                recurrenceCount > 0 ? "recurrence" : null,
                 completedCount > 0 ? "completed" : null,
-              ].filter((item): item is "deadline" | "follow_up" | "completed" => Boolean(item));
+              ].filter((item): item is "deadline" | "follow_up" | "recurrence" | "completed" => Boolean(item));
 
               return (
                 <>
@@ -181,6 +258,8 @@ export function HomeCalendar({ tasks }: { tasks: CalendarTask[] }) {
                           ? "bg-rose-400"
                           : marker === "follow_up"
                             ? "bg-sky-400"
+                            : marker === "recurrence"
+                              ? "bg-amber-400"
                             : "bg-zinc-400"
                       }`}
                       key={`${day.key}-${marker}`}
@@ -202,6 +281,12 @@ export function HomeCalendar({ tasks }: { tasks: CalendarTask[] }) {
                   {followUpCount}
                 </span>
               ) : null}
+              {recurrenceCount > 0 ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">
+                  <span className="text-[11px] leading-none">⟳</span>
+                  {recurrenceCount}
+                </span>
+              ) : null}
               {completedCount > 0 ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-600">
                   <span className="text-[11px] leading-none">✓</span>
@@ -217,7 +302,9 @@ export function HomeCalendar({ tasks }: { tasks: CalendarTask[] }) {
                       ? "bg-zinc-100 text-zinc-500 line-through decoration-zinc-400"
                       : event.kind === "deadline"
                         ? "bg-rose-50 text-rose-700"
-                        : "bg-sky-50 text-sky-700"
+                        : event.kind === "follow_up"
+                          ? "bg-sky-50 text-sky-700"
+                          : "bg-amber-50 text-amber-700"
                   }`}
                   href={`/tasks/${event.taskId}`}
                   key={`${day.key}-${event.kind}-${event.taskId}-${event.atLabel}`}
@@ -259,7 +346,7 @@ export function HomeCalendar({ tasks }: { tasks: CalendarTask[] }) {
           <div className="mt-4 space-y-3">
             {selectedDay.events.length === 0 ? (
               <p className="rounded-[18px] bg-[var(--panel)] px-4 py-3 text-sm text-[var(--muted)] ring-1 ring-[var(--line)]">
-                这一天当前没有截止项或回看项。
+                这一天当前没有截止项、重复项或回看项。
               </p>
             ) : (
               selectedDay.events.map((event) => (
@@ -276,10 +363,12 @@ export function HomeCalendar({ tasks }: { tasks: CalendarTask[] }) {
                             ? "bg-zinc-100 text-zinc-600"
                             : event.kind === "deadline"
                               ? "bg-rose-100 text-rose-700"
-                              : "bg-sky-100 text-sky-700"
+                              : event.kind === "follow_up"
+                                ? "bg-sky-100 text-sky-700"
+                                : "bg-amber-100 text-amber-700"
                         }`}
                       >
-                        {event.isCompleted ? "已完成" : event.kind === "deadline" ? "截止" : "回看"}
+                        {event.isCompleted ? "已完成" : event.kind === "deadline" ? "截止" : event.kind === "follow_up" ? "回看" : "重复"}
                       </span>
                       <p className={`min-w-0 flex-1 truncate text-sm ${event.isCompleted ? "text-zinc-500 line-through" : "text-[var(--text)]"}`}>
                         {event.title}

@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 type AssistantMessage = {
@@ -50,6 +51,11 @@ type PlannedAction =
   | {
       type: "create_task";
       sourceText: string;
+    }
+  | {
+      type: "update_task_core";
+      taskId: string;
+      patch: Record<string, unknown>;
     };
 
 type PendingAction = {
@@ -96,9 +102,18 @@ type UndoAction = {
   summary?: string;
 };
 
+type ClarifyState = {
+  type: "arrange_task_time";
+  taskId?: string | null;
+  hour?: number | null;
+  minute?: number | null;
+  turns?: number;
+};
+
 const quickPrompts = ["现在最该做什么？", "帮我看待确认队列", "新增任务：明天下午三点去打印材料", "把最紧急那条标记为进行中"];
 
 export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
+  const router = useRouter();
   const [isSending, setIsSending] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [draft, setDraft] = useState("");
@@ -106,12 +121,13 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
   const [lastReferencedTaskId, setLastReferencedTaskId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [undoAction, setUndoAction] = useState<UndoAction | null>(null);
+  const [clarifyState, setClarifyState] = useState<ClarifyState | null>(null);
   const [messages, setMessages] = useState<AssistantMessage[]>([
     {
       id: "assistant-welcome",
       role: "assistant",
       content: databaseReady
-        ? "我能读首页全部任务，并帮你做常见管理动作。你可以直接问我现在最该做什么，标记任务状态，或者说“新增任务：明天下午三点去打印材料”。"
+        ? "我能读取任务、课表和今日日程安排，并支持改状态、改任务字段、调整今天安排。你可以直接说“读取今天安排数据”或“把某条任务安排到20:00”。"
         : "数据库还没准备好。先初始化数据库，之后我才能读取和管理任务。",
     },
   ]);
@@ -193,6 +209,7 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
             lastReferencedTaskId,
             pendingAction,
             undoAction,
+            clarifyState,
           },
         }),
       });
@@ -218,6 +235,7 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
         referencedTaskIds?: string[];
         pendingAction?: PendingAction | null;
         undoAction?: UndoAction | null;
+        clarifyState?: ClarifyState | null;
         error?: string;
       };
 
@@ -230,6 +248,7 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
       }
       setPendingAction(payload.pendingAction ?? null);
       setUndoAction(payload.undoAction ?? null);
+      setClarifyState(payload.clarifyState ?? null);
 
       finalizePendingMessage(pendingMessageId, {
         id: generateMessageId("assistant"),
@@ -244,6 +263,8 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
 
       if ((payload.changedTaskIds?.length ?? 0) > 0) {
         setHasUnsyncedChanges(true);
+        router.refresh();
+        setHasUnsyncedChanges(false);
       }
     } catch {
       finalizePendingMessage(pendingMessageId, {
@@ -269,7 +290,7 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
 
       <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-50 flex flex-col items-end gap-3 sm:bottom-6 sm:right-6">
         {isOpen ? (
-          <section className="relative flex h-[min(86vh,760px)] w-[min(calc(100vw-16px),430px)] flex-col overflow-hidden rounded-[28px] border border-[rgba(71,53,31,0.14)] bg-[linear-gradient(165deg,rgba(255,252,246,0.98),rgba(248,241,231,0.96))] shadow-[0_26px_70px_rgba(48,35,18,0.18)] sm:h-[min(76vh,760px)] sm:w-[min(calc(100vw-24px),430px)] sm:rounded-[30px]">
+          <section className="fixed inset-x-2 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-50 mx-auto flex h-[min(92vh,900px)] w-[min(100vw-16px,920px)] flex-col overflow-hidden rounded-[28px] border border-[rgba(71,53,31,0.14)] bg-[linear-gradient(165deg,rgba(255,252,246,0.98),rgba(248,241,231,0.96))] shadow-[0_26px_70px_rgba(48,35,18,0.18)] sm:inset-x-auto sm:bottom-6 sm:right-6 sm:left-6 sm:h-[min(88vh,900px)] sm:w-[min(100vw-48px,920px)] sm:rounded-[30px]">
             <div className="pointer-events-none absolute inset-0">
               <div className="absolute -left-8 top-0 h-24 w-24 rounded-full bg-[rgba(178,75,42,0.08)] blur-2xl" />
               <div className="absolute right-0 top-8 h-28 w-28 rounded-full bg-[rgba(40,95,103,0.08)] blur-2xl" />
@@ -304,11 +325,11 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
               </button>
             </div>
 
-            <div className="relative border-b border-[rgba(71,53,31,0.08)] px-3 py-3 sm:px-4">
-              <div className="flex flex-wrap gap-2">
+            <div className="relative border-b border-[rgba(71,53,31,0.08)] px-3 py-2.5 sm:px-4">
+              <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 {quickPrompts.map((prompt) => (
                   <button
-                    className="rounded-full border border-[rgba(71,53,31,0.08)] bg-white/88 px-3 py-1.5 text-xs text-[var(--muted)] shadow-[0_6px_14px_rgba(90,67,35,0.04)] transition hover:-translate-y-0.5 hover:border-[var(--accent)] hover:text-[var(--text)] active:scale-[0.98]"
+                    className="shrink-0 rounded-full border border-[rgba(71,53,31,0.08)] bg-white/88 px-3 py-1.5 text-xs text-[var(--muted)] shadow-[0_6px_14px_rgba(90,67,35,0.04)] transition hover:-translate-y-0.5 hover:border-[var(--accent)] hover:text-[var(--text)] active:scale-[0.98]"
                     key={prompt}
                     onClick={() => {
                       void sendMessage(prompt);
@@ -321,8 +342,8 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
               </div>
             </div>
 
-            <div className="relative flex-1 overflow-hidden px-3 py-3 sm:px-4 sm:py-4">
-              <div className="h-full space-y-4 overflow-y-auto pr-1" ref={messagesRef}>
+            <div className="relative flex-1 overflow-hidden px-3 py-2.5 sm:px-4 sm:py-3">
+              <div className="h-full min-h-[220px] space-y-4 overflow-y-auto pr-1" ref={messagesRef}>
                 {messages.map((message) => (
                   <div className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`} key={message.id}>
                     <div className={`max-w-[94%] sm:max-w-[90%] ${message.role === "user" ? "" : "pr-2 sm:pr-6"}`}>
@@ -462,15 +483,22 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
               }}
             >
               <textarea
-                className="min-h-24 w-full rounded-[22px] border border-[rgba(71,53,31,0.1)] bg-white/92 px-4 py-3 text-sm leading-7 text-[var(--text)] outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--accent)] focus:shadow-[0_0_0_4px_rgba(178,75,42,0.08)]"
+                className="min-h-20 w-full rounded-[22px] border border-[rgba(71,53,31,0.1)] bg-white/92 px-4 py-3 text-sm leading-7 text-[var(--text)] outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--accent)] focus:shadow-[0_0_0_4px_rgba(178,75,42,0.08)]"
                 disabled={!databaseReady || isSending}
                 onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
+                    return;
+                  }
+                  event.preventDefault();
+                  void sendMessage(draft);
+                }}
                 placeholder="例如：新增任务：明天下午三点去打印材料 / 把某条任务标记为进行中"
                 value={draft}
               />
               <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-xs leading-6 text-[var(--muted)]">
-                  当前支持：问任务、新增任务、改状态、确认待确认、安排等待回看、记录重复任务进度。
+                  当前支持：读课表、读今日日程、调整安排、修改任务字段、新增任务、改状态、确认待确认、安排回看、记录重复进度。
                 </p>
                 <button
                   className="rounded-full bg-[linear-gradient(135deg,var(--accent),#c2643e)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_12px_22px_rgba(178,75,42,0.2)] transition hover:-translate-y-0.5 active:scale-[0.98] disabled:opacity-60"
@@ -495,7 +523,7 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
           </span>
           <span className="text-left">
             <span className="block text-sm font-semibold">{isOpen ? "收起任务助手" : "打开任务助手"}</span>
-            <span className="block text-[11px] text-white/82">{databaseReady ? "读任务、改状态、新增任务" : "数据库未就绪"}</span>
+            <span className="block text-[11px] text-white/82">{databaseReady ? "读任务/课表，改安排/字段" : "数据库未就绪"}</span>
           </span>
         </button>
       </div>

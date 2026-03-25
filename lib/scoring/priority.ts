@@ -8,6 +8,7 @@ export type PriorityTask = {
   id: string;
   title: string;
   status: TaskStatus;
+  startAt?: string | Date | null;
   deadline: string | Date | null;
   taskType: string;
   recurrenceType?: string | null;
@@ -23,6 +24,7 @@ export type PriorityTask = {
   waitingReasonType?: string | null;
   waitingReasonText?: string | null;
   nextCheckAt?: string | Date | null;
+  snoozeUntil?: string | Date | null;
   nextActionSuggestion: string;
   successorCount: number;
   blockingPredecessorTitles?: string[];
@@ -53,6 +55,19 @@ export function calculatePriority(task: PriorityTask): PriorityResult {
   }
 
   const diffHours = diffHoursFromNow(task.deadline);
+  const startDiffHours = diffHoursFromNow(task.startAt ?? null);
+  const snoozeDiffHours = diffHoursFromNow(task.snoozeUntil ?? null);
+
+  if (startDiffHours !== null && startDiffHours > 0) {
+    score -= 32;
+    reasons.push(`尚未到开始时间（${formatDeadline(task.startAt ?? null)}）`);
+  }
+
+  if (snoozeDiffHours !== null && snoozeDiffHours > 0) {
+    score -= 54;
+    reasons.push(`已设置稍后提醒至 ${formatDeadline(task.snoozeUntil ?? null)}`);
+  }
+
   if (diffHours !== null) {
     if (diffHours < 0) {
       deadlineIsOverdue = true;

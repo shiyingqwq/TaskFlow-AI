@@ -16,7 +16,7 @@ export function buildTaskExtractionSystemPrompt(activeIdentities: string[] = [])
 2. 若通知包含链式流程，请拆成多个任务。
 2.1 如果任务之间存在明确先后、前置条件或阻塞关系，请在 dependencies 里输出，使用任务在 tasks 数组中的下标。字段为 predecessorIndex、successorIndex、relationType。
 2.2 relationType 只能是 sequence、prerequisite、blocks。
-3. 若原文出现“每天/每周某几天/共几次/每天完成几次”这类表达，请尽量补出 recurrenceType、recurrenceDays、recurrenceTargetCount、recurrenceLimit。
+3. 若原文出现“每天/每周某几天/共几次/每天完成几次”这类表达，请尽量补出 recurrenceType、recurrenceDays、recurrenceTargetCount、recurrenceLimit、recurrenceStartISO、recurrenceUntilISO、recurrenceMaxOccurrences。
 3.1 如果原文明确说明任务只针对某个身份或角色，例如班长、团支书、负责人、申请人、组长，请填 applicableIdentities；如果只能看出一点提示但不够确定，可写 identityHint。
 4. deadlineISO 使用 ISO 8601，时区按 ${APP_TIMEZONE}。
 5. 若时间不确定，deadlineISO 设为 null，并在 deadlineText 保留原表达。
@@ -26,7 +26,9 @@ export function buildTaskExtractionSystemPrompt(activeIdentities: string[] = [])
 9. 今天时间是 ${today}（${APP_TIMEZONE}）。
 10. 如果原文没有写年份，deadlineISO 必须按当前年份推断，不允许写成往年年份。
 11. estimatedMinutes 代表预估完成时长（分钟），范围 10-480；不确定可填 null。
-12. 输出必须是合法 JSON，不要附加解释。`;
+12. 如有“开始执行时间/暂缓到某时/可开始时间”，请补 startAtISO 或 snoozeUntilISO。
+13. timezone 默认填 ${APP_TIMEZONE}，除非原文明确指定其他时区。
+14. 输出必须是合法 JSON，不要附加解释。`;
 }
 
 export function buildTaskExtractionUserPrompt(text: string, activeIdentities: string[] = []) {
@@ -246,8 +248,19 @@ function normalizeTask(task: unknown) {
       raw.recurrenceLimit === null || raw.repeatLimit === null || (raw.recurrenceLimit === undefined && raw.repeatLimit === undefined)
         ? null
         : normalizePositiveInt(raw.recurrenceLimit ?? raw.repeatLimit, 1),
+    recurrenceStartISO: normalizeIsoDateTime(raw.recurrenceStartISO ?? raw.repeatStartAt ?? raw.repeatStartISO),
+    recurrenceUntilISO: normalizeIsoDateTime(raw.recurrenceUntilISO ?? raw.repeatUntil ?? raw.repeatEndAt),
+    recurrenceMaxOccurrences:
+      raw.recurrenceMaxOccurrences === null ||
+      raw.maxOccurrences === null ||
+      (raw.recurrenceMaxOccurrences === undefined && raw.maxOccurrences === undefined)
+        ? null
+        : normalizePositiveInt(raw.recurrenceMaxOccurrences ?? raw.maxOccurrences, 1),
     deadlineISO: deadline.deadlineISO,
     deadlineText: deadline.deadlineText,
+    startAtISO: normalizeIsoDateTime(raw.startAtISO ?? raw.startISO ?? raw.startAt),
+    snoozeUntilISO: normalizeIsoDateTime(raw.snoozeUntilISO ?? raw.snoozeUntil ?? raw.deferUntil),
+    timezone: normalizeString(raw.timezone ?? raw.tz) ?? APP_TIMEZONE,
     submitTo: normalizeString(raw.submitTo ?? raw.receiver ?? raw.assignee),
     submitChannel: normalizeString(raw.submitChannel ?? raw.channel ?? raw.method),
     applicableIdentities: normalizeApplicableIdentities(raw.applicableIdentities ?? raw.identities ?? raw.roles ?? raw.audience),

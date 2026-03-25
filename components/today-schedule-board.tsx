@@ -1,8 +1,11 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 
 import { CourseScheduleItem, getCoursesForDay } from "@/lib/course-schedule";
 import type { TaskStatus } from "@/generated/prisma/enums";
-import { formatDeadline } from "@/lib/time";
+import { formatDeadline, nowInTaipei, toTaipei } from "@/lib/time";
 import { StatusBadge } from "@/components/status-badge";
 
 type ScheduleTask = {
@@ -10,6 +13,7 @@ type ScheduleTask = {
   title: string;
   status: TaskStatus;
   displayStatus?: TaskStatus | "blocked";
+  startAt?: string | Date | null;
   deadline?: string | Date | null;
   nextActionSuggestion?: string | null;
   priorityScore?: number;
@@ -146,15 +150,63 @@ function estimateTaskMinutes(task: ScheduleTask) {
   return 45;
 }
 
+function compactText(value: string) {
+  return value.replace(/\s+/g, "").toLowerCase();
+}
+
+function inferEarliestStartMinutes(task: ScheduleTask, todayCourses: CourseScheduleItem[]) {
+  const startAt = toTaipei(task.startAt);
+  const today = nowInTaipei();
+  if (startAt) {
+    if (startAt.isAfter(today, "day")) {
+      return toMinutes("23:59");
+    }
+    if (startAt.isSame(today, "day")) {
+      return startAt.hour() * 60 + startAt.minute();
+    }
+  }
+
+  if (todayCourses.length === 0) {
+    return null;
+  }
+
+  const text = compactText(`${task.title} ${task.nextActionSuggestion ?? ""}`);
+  const requiresAfterClass =
+    /(复习|复盘|总结|回顾)/.test(text) &&
+    /(当天|今日|今天)/.test(text) &&
+    /(课程|上课|课堂|课)/.test(text);
+  if (!requiresAfterClass) {
+    return null;
+  }
+
+  const matchedCourseEnds = todayCourses
+    .filter((course) => {
+      const normalizedTitle = compactText(course.title);
+      return normalizedTitle.length > 0 && text.includes(normalizedTitle);
+    })
+    .map((course) => toMinutes(course.endTime));
+
+  if (matchedCourseEnds.length > 0) {
+    return Math.max(...matchedCourseEnds);
+  }
+
+  // 未匹配到课程名时，保守放到当天最后一节课后。
+  return Math.max(...todayCourses.map((course) => toMinutes(course.endTime)));
+}
+
 function pickOneTaskFromGroups(
   groups: ScheduleTask[][],
   usedIds: Set<string>,
   remainingMinutes: number,
   mustFit: boolean,
+  canPlaceTask: (task: ScheduleTask) => boolean,
 ) {
   for (const group of groups) {
     for (const task of group) {
       if (usedIds.has(task.id)) {
+        continue;
+      }
+      if (!canPlaceTask(task)) {
         continue;
       }
       const estimate = estimateTaskMinutes(task);
@@ -167,20 +219,31 @@ function pickOneTaskFromGroups(
   return null;
 }
 
-function pickSlotTasks(input: TodayScheduleBoardProps, slot: ScheduleSlot, usedIds: Set<string>) {
+function pickSlotTasks(input: TodayScheduleBoardProps, slot: ScheduleSlot, usedIds: Set<string>, todayCourses: CourseScheduleItem[]) {
   const maxTasks = slot.endMinutes - slot.startMinutes >= 150 ? 2 : 1;
   const eveningFirst = slot.startMinutes >= toMinutes("18:00");
   const groups = eveningFirst
     ? [input.reminderTasks, input.mustDoTasks, input.shouldDoTasks, input.canWaitTasks]
     : [input.mustDoTasks, input.shouldDoTasks, input.reminderTasks, input.canWaitTasks];
+  const canPlaceTask = (task: ScheduleTask) => {
+    const earliestStartMinutes = inferEarliestStartMinutes(task, todayCourses);
+    const deadline = task.deadline ? toTaipei(task.deadline) : null;
+    const deadlineMinutes = deadline ? deadline.hour() * 60 + deadline.minute() : null;
+
+    if (earliestStartMinutes !== null && deadlineMinutes !== null && earliestStartMinutes >= deadlineMinutes) {
+      return false;
+    }
+
+    return earliestStartMinutes === null || slot.endMinutes > earliestStartMinutes;
+  };
 
   const selected: ScheduleTask[] = [];
   let remaining = slot.endMinutes - slot.startMinutes;
 
   while (selected.length < maxTasks && remaining >= 25) {
     const picked =
-      pickOneTaskFromGroups(groups, usedIds, remaining, true) ??
-      (selected.length === 0 ? pickOneTaskFromGroups(groups, usedIds, remaining, false) : null);
+      pickOneTaskFromGroups(groups, usedIds, remaining, true, canPlaceTask) ??
+      (selected.length === 0 ? pickOneTaskFromGroups(groups, usedIds, remaining, false, canPlaceTask) : null);
     if (!picked) {
       break;
     }
@@ -206,15 +269,115 @@ function buildScheduleSlots(input: TodayScheduleBoardProps): ScheduleSlot[] {
       startMinutes: range.start,
       endMinutes: range.end,
     };
-    slot.tasks = pickSlotTasks(input, slot, usedIds);
+    slot.tasks = pickSlotTasks(input, slot, usedIds, todayCourses);
     slot.hint = buildSlotHint(slot.startMinutes, slot.tasks.length > 0);
     return slot;
   });
 }
 
+function buildScheduleLintIssues(slots: ScheduleSlot[], courses: CourseScheduleItem[]) {
+  const issues: string[] = [];
+
+  for (const slot of slots) {
+    for (const task of slot.tasks) {
+      const earliestStartMinutes = inferEarliestStartMinutes(task, courses);
+      const deadline = task.deadline ? toTaipei(task.deadline) : null;
+      const deadlineMinutes = deadline ? deadline.hour() * 60 + deadline.minute() : null;
+
+      if (earliestStartMinutes !== null && deadlineMinutes !== null && earliestStartMinutes >= deadlineMinutes) {
+        issues.push(`「${task.title}」开始时间约束已晚于截止时间（最早 ${formatMinutes(earliestStartMinutes)}，截止 ${formatDeadline(task.deadline)}）。`);
+      }
+
+      if (earliestStartMinutes !== null && slot.endMinutes <= earliestStartMinutes) {
+        issues.push(`「${task.title}」被安排在 ${slot.period}，但最早应在 ${formatMinutes(earliestStartMinutes)} 后执行。`);
+      }
+
+      if (deadline) {
+        if (slot.endMinutes > deadlineMinutes && slot.startMinutes < deadlineMinutes) {
+          issues.push(`「${task.title}」在 ${slot.period} 跨越了截止时间 ${formatDeadline(task.deadline)}，建议前移。`);
+        }
+      }
+    }
+  }
+
+  return issues.slice(0, 6);
+}
+
 export function TodayScheduleBoard(props: TodayScheduleBoardProps) {
-  const slots = buildScheduleSlots(props);
+  const slots = useMemo(
+    () => buildScheduleSlots(props),
+    [props.mustDoTasks, props.shouldDoTasks, props.reminderTasks, props.canWaitTasks, props.courseSchedule],
+  );
+  const lintIssues = useMemo(() => buildScheduleLintIssues(slots, getCoursesForDay(props.courseSchedule)), [slots, props.courseSchedule]);
+  const [auditSummary, setAuditSummary] = useState<string>("");
+  const [auditMode, setAuditMode] = useState<"ai" | "fallback" | "idle">("idle");
+  const [auditPending, setAuditPending] = useState(false);
   const totalFreeMinutes = slots.reduce((sum, slot) => sum + (slot.endMinutes - slot.startMinutes), 0);
+  const todayCourses = useMemo(() => getCoursesForDay(props.courseSchedule), [props.courseSchedule]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function runAudit() {
+      setAuditPending(true);
+      try {
+        const response = await fetch("/api/schedule/audit", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            dateLabel: nowInTaipei().format("YYYY-MM-DD"),
+            lintIssues,
+            courses: todayCourses.map((course) => ({
+              title: course.title,
+              startTime: course.startTime,
+              endTime: course.endTime,
+            })),
+            slots: slots.map((slot) => ({
+              label: slot.label,
+              period: slot.period,
+              tasks: slot.tasks.map((task) => ({
+                title: task.title,
+                status: task.status,
+                deadlineLabel: formatDeadline(task.deadline),
+                estimateMinutes: estimateTaskMinutes(task),
+              })),
+            })),
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error("schedule audit request failed");
+        }
+        const payload = (await response.json()) as { text?: string; mode?: "ai" | "fallback" };
+        if (cancelled) {
+          return;
+        }
+        setAuditSummary(payload.text?.trim() || "");
+        setAuditMode(payload.mode === "ai" ? "ai" : "fallback");
+      } catch {
+        if (cancelled) {
+          return;
+        }
+        setAuditSummary(
+          lintIssues.length > 0
+            ? `检测到 ${lintIssues.length} 处排程风险，建议先处理高风险时段再执行。`
+            : "当前排程未发现明显冲突，可按既定顺序推进。",
+        );
+        setAuditMode("fallback");
+      } finally {
+        if (!cancelled) {
+          setAuditPending(false);
+        }
+      }
+    }
+
+    runAudit();
+    return () => {
+      cancelled = true;
+    };
+  }, [slots, todayCourses, lintIssues]);
+
   return (
     <section className="rounded-[28px] border border-[var(--line)] bg-[linear-gradient(160deg,rgba(255,252,246,0.92),rgba(255,255,255,0.9))] p-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -225,6 +388,29 @@ export function TodayScheduleBoard(props: TodayScheduleBoardProps) {
         <div className="rounded-2xl bg-white/75 px-3 py-2 text-right ring-1 ring-[var(--line)]">
           <p className="text-[11px] uppercase tracking-[0.16em] text-[var(--muted)]">可执行窗口</p>
           <p className="text-sm font-semibold text-[var(--ink)]">{slots.length} 段 · {totalFreeMinutes} 分钟</p>
+        </div>
+      </div>
+
+      <div className="mt-3 space-y-2">
+        <div className="rounded-xl border border-[var(--line)] bg-white/85 px-3 py-2 text-sm text-[var(--muted)]">
+          <span className="font-medium text-[var(--ink)]">规则审核：</span>
+          {lintIssues.length > 0 ? `发现 ${lintIssues.length} 处可疑安排` : "未发现明显冲突"}
+        </div>
+        {lintIssues.length > 0 ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            {lintIssues[0]}
+          </div>
+        ) : null}
+        <div className="rounded-xl border border-[var(--line)] bg-white/85 px-3 py-2 text-sm text-[var(--muted)]">
+          <span className="font-medium text-[var(--ink)]">AI 审核：</span>
+          {auditPending
+            ? "正在审核当前排程合理性..."
+            : auditSummary || "尚未生成审核结论。"}
+          {!auditPending && auditMode !== "idle" ? (
+            <span className="ml-2 rounded-full bg-[var(--panel)] px-2 py-0.5 text-xs text-[var(--muted)] ring-1 ring-[var(--line)]">
+              {auditMode === "ai" ? "AI" : "Fallback"}
+            </span>
+          ) : null}
         </div>
       </div>
 

@@ -111,7 +111,10 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
               <p className={`mt-2 text-xl font-semibold ${task.status === "overdue" ? "text-rose-700" : "text-[var(--text)]"}`}>
                 {formatDeadline(task.deadline)}
               </p>
+              <p className="mt-1 text-sm text-[var(--muted)]">开始时间：{formatDeadline(task.startAt)}</p>
               <p className="mt-1 text-sm text-[var(--muted)]">原始表达：{task.deadlineText || "未明确"}</p>
+              <p className="mt-1 text-sm text-[var(--muted)]">稍后提醒到：{formatDeadline(task.snoozeUntil)}</p>
+              <p className="mt-1 text-sm text-[var(--muted)]">时区：{task.timezone || "Asia/Shanghai"}</p>
               {deadlineAudit ? <p className="mt-1 text-sm text-[var(--muted)]">{describeDeadlineAudit(deadlineAudit)}</p> : null}
               {deadlineAudit?.rule ? <p className="mt-1 text-xs text-[var(--muted)]">审计规则：{deadlineAudit.rule}</p> : null}
             </div>
@@ -167,6 +170,9 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
                 <p>适用身份：{describeIdentityScope(task)}</p>
                 <p>交付形式：{deliveryTypeLabels[task.deliveryType]}</p>
                 <p>任务节奏：{getRecurrenceSummary(task)}</p>
+                <p>重复开始：{formatDeadline(task.recurrenceStartAt)}</p>
+                <p>重复截止：{formatDeadline(task.recurrenceUntil)}</p>
+                <p>最多次数：{task.recurrenceMaxOccurrences ?? "不限制"}</p>
                 <p>签字要求：{task.requiresSignature ? "需要" : "不需要/未提及"}</p>
                 <p>盖章要求：{task.requiresStamp ? "需要" : "不需要/未提及"}</p>
               </div>
@@ -218,14 +224,20 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
             id: task.id,
             title: task.title,
             description: task.description,
+            startAtISO: task.startAt?.toISOString() ?? null,
             submitTo: task.submitTo,
             submitChannel: task.submitChannel,
             recurrenceType: task.recurrenceType as "single" | "daily" | "weekly" | "limited",
             recurrenceDays: Array.isArray(task.recurrenceDays) ? task.recurrenceDays.map((item) => Number(item)).filter((item) => !Number.isNaN(item)) : [],
             recurrenceTargetCount: task.recurrenceTargetCount,
             recurrenceLimit: task.recurrenceLimit,
+            recurrenceStartISO: task.recurrenceStartAt?.toISOString() ?? null,
+            recurrenceUntilISO: task.recurrenceUntil?.toISOString() ?? null,
+            recurrenceMaxOccurrences: task.recurrenceMaxOccurrences,
             deadlineText: task.deadlineText,
             deadlineISO: task.deadline?.toISOString() ?? null,
+            timezone: task.timezone ?? "Asia/Shanghai",
+            snoozeUntilISO: task.snoozeUntil?.toISOString() ?? null,
             deliveryType: task.deliveryType,
             requiresSignature: task.requiresSignature,
             requiresStamp: task.requiresStamp,
