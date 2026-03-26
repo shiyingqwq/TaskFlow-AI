@@ -133,6 +133,8 @@ type ClarifyState = {
   turns?: number;
 };
 
+type ExecutionMode = "preview_first" | "direct_low_risk";
+
 const quickPrompts = ["现在最该做什么？", "帮我看待确认队列", "新增任务：明天下午三点去打印材料", "把最紧急那条标记为进行中"];
 
 function formatTraceStopReason(reason: NonNullable<AssistantMessage["trace"]>[number]["stopReason"]) {
@@ -155,6 +157,7 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [undoAction, setUndoAction] = useState<UndoAction | null>(null);
   const [clarifyState, setClarifyState] = useState<ClarifyState | null>(null);
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>("preview_first");
   const [messages, setMessages] = useState<AssistantMessage[]>([
     {
       id: "assistant-welcome",
@@ -169,6 +172,23 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
   function generateMessageId(prefix: "user" | "assistant" | "pending") {
     return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   }
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const saved = window.localStorage.getItem("home-assistant-execution-mode");
+    if (saved === "preview_first" || saved === "direct_low_risk") {
+      setExecutionMode(saved);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.setItem("home-assistant-execution-mode", executionMode);
+  }, [executionMode]);
 
   function finalizePendingMessage(pendingId: string, nextMessage: AssistantMessage) {
     setMessages((current) =>
@@ -243,6 +263,7 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
             pendingAction,
             undoAction,
             clarifyState,
+            executionMode,
           },
         }),
       });
@@ -367,6 +388,31 @@ export function HomeAiAssistant({ databaseReady }: { databaseReady: boolean }) {
             </div>
 
             <div className="relative border-b border-[rgba(71,53,31,0.08)] px-3 py-2.5 sm:px-4">
+              <div className="mb-2 flex flex-wrap items-center gap-2 px-1">
+                <span className="text-[11px] uppercase tracking-[0.14em] text-[var(--muted)]">执行模式</span>
+                <button
+                  className={`rounded-full px-3 py-1 text-xs ring-1 transition ${
+                    executionMode === "preview_first"
+                      ? "bg-[rgba(178,75,42,0.16)] text-[var(--text)] ring-[rgba(178,75,42,0.25)]"
+                      : "bg-white/88 text-[var(--muted)] ring-[rgba(71,53,31,0.08)]"
+                  }`}
+                  onClick={() => setExecutionMode("preview_first")}
+                  type="button"
+                >
+                  先预览后执行
+                </button>
+                <button
+                  className={`rounded-full px-3 py-1 text-xs ring-1 transition ${
+                    executionMode === "direct_low_risk"
+                      ? "bg-[rgba(178,75,42,0.16)] text-[var(--text)] ring-[rgba(178,75,42,0.25)]"
+                      : "bg-white/88 text-[var(--muted)] ring-[rgba(71,53,31,0.08)]"
+                  }`}
+                  onClick={() => setExecutionMode("direct_low_risk")}
+                  type="button"
+                >
+                  低风险直接执行
+                </button>
+              </div>
               <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 {quickPrompts.map((prompt) => (
                   <button

@@ -127,6 +127,7 @@ const requestSchema = z.object({
       pendingAction: pendingActionSchema.nullable().optional(),
       undoAction: undoActionSchema.nullable().optional(),
       clarifyState: clarifyStateSchema.nullable().optional(),
+      executionMode: z.enum(["preview_first", "direct_low_risk"]).optional(),
     })
     .optional(),
 });

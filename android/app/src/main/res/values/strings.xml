@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">TaskFlow AI</string>
+    <string name="title_activity_main">TaskFlow AI</string>
+    <string name="package_name">com.taskflow.ai</string>
+    <string name="custom_url_scheme">com.taskflow.ai</string>
+</resources>

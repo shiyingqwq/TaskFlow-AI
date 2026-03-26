@@ -14,9 +14,15 @@
     "seed": "tsx prisma/seed.ts",
     "setup": "npm run prisma:prepare && prisma generate && prisma db push",
     "test": "vitest run",
-    "lint": "eslint . --ext .js,.mjs"
+    "lint": "eslint . --ext .js,.mjs",
+    "mobile:android:add": "npx cap add android",
+    "mobile:sync": "npx cap sync android",
+    "mobile:open": "npx cap open android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.2.0",
+    "@capacitor/cli": "^8.2.0",
+    "@capacitor/core": "^8.2.0",
     "@libsql/client": "^0.15.8",
     "@prisma/adapter-libsql": "^6.5.0",
     "@prisma/client": "^6.5.0",

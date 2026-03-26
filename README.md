@@ -244,6 +244,58 @@ npm run test
 - priority scoring 的基础测试
 - fallback parser 的链式任务拆分测试
 
+## Android APK（Capacitor 壳）
+
+这个项目已接入 Capacitor，可把现有前端包装成安卓壳应用。
+
+### 1) 安装依赖并生成安卓工程
+
+```bash
+npm install
+npm run mobile:android:add
+```
+
+### 2) 配置要加载的线上地址（推荐）
+
+在运行 `sync` 前设置环境变量（必须是你可访问的部署地址）：
+
+```bash
+export CAP_SERVER_URL="https://your-domain.com"
+```
+
+说明：
+
+- `https://` 地址：默认安全
+- `http://` 地址：会自动开启 cleartext（仅建议局域网调试）
+
+### 3) 同步到安卓工程
+
+```bash
+npm run mobile:sync
+```
+
+### 4) 打开 Android Studio 并打包 APK
+
+```bash
+npm run mobile:open
+```
+
+然后在 Android Studio：
+
+- `Build > Build APK(s)`（调试包）
+- 或 `Build > Generate Signed Bundle / APK`（签名发布包）
+
+如果你只想命令行生成调试包，也可以：
+
+```bash
+cd android
+./gradlew assembleDebug
+```
+
+生成后通常在：
+
+`android/app/build/outputs/apk/debug/app-debug.apk`
+
 ## 后续最值得做的扩展点
 
 1. 增加本地 OCR 或接入更稳定的图片/PDF OCR 管线，降低图片 fallback 的能力缺口

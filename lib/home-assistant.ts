@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { TaskStatus } from "@/generated/prisma/enums";
 import { statusLabels } from "@/lib/constants";
 import { getCoursesForDay, normalizeCourseSchedule, type CourseScheduleItem } from "@/lib/course-schedule";
-import { getAiRuntimeConfig, getAppSettings } from "@/lib/server/app-settings";
+import { getAiRuntimeConfig, getAppSettings, patchCourseTableConfig } from "@/lib/server/app-settings";
 import {
   createAssistantTask,
   deleteTask,
@@ -24,6 +24,7 @@ import {
 import { formatDeadline, nowInTaipei, toTaipei } from "@/lib/time";
 import { describeWaitingReason, type WaitingFollowUpPreset } from "@/lib/waiting";
 import { normalizeMaterials } from "@/lib/materials";
+import { executeHomeAssistantSummaryTool, resolveSummaryToolFromMessage } from "@/lib/home-assistant-tools";
 import { detectAssistantSkill, getSkillInstruction, getSkillToolCatalog, type AssistantSkill } from "@/lib/home-assistant-skills";
 
 export type AssistantHistoryMessage = {
@@ -36,7 +37,10 @@ export type AssistantConversationContext = {
   pendingAction?: AssistantPendingAction | null;
   undoAction?: AssistantUndoAction | null;
   clarifyState?: AssistantClarifyState | null;
+  executionMode?: AssistantExecutionMode;
 };
+
+export type AssistantExecutionMode = "preview_first" | "direct_low_risk";
 
 export type AssistantClarifyState = {
   type: "arrange_task_time";
@@ -59,6 +63,23 @@ type AssistantStrategyPolicy = {
   autoSelectCurrentBestTaskOnArrange: boolean;
   autoSelectCurrentBestTaskOnStatus: boolean;
   maxClarifyTurns: number;
+  ruleMode: "strict" | "balanced";
+};
+
+type AssistantFeedbackEvent = "confirm_pending_action" | "cancel_pending_action" | "clarify_needed";
+
+type AssistantLearningProfile = {
+  version: 1;
+  feedback: {
+    confirmCount: number;
+    cancelCount: number;
+    clarifyCount: number;
+  };
+  preferences: {
+    defaultExecutionMode: AssistantExecutionMode;
+    replyStyle: "concise" | "natural";
+  };
+  updatedAt: string;
 };
 
 const AI_AUTONOMOUS_MAX_STEPS = 3;
@@ -207,6 +228,8 @@ type AssistantResolvedPlan = {
   pendingAction?: AssistantPendingAction | null;
   clarifyState?: AssistantClarifyState | null;
   confirmedFromPending?: boolean;
+  lockLocalReply?: boolean;
+  invokedTools?: string[];
 };
 
 type AssistantResult = {
@@ -239,11 +262,16 @@ type AssistantResult = {
   }>;
 };
 
-function shouldPreferLocalPlan(plan: {
+function isTimeToolQuery(message: string) {
+  return /(?:现在|当前|此刻|目前).*(?:时间|几点|日期|星期|周几)|(?:今天).*(?:几号|几月几号|星期几|周几)|(?:能|可以|可否).*(?:读取|告诉我|查看).*(?:时间|几点|日期|星期)/.test(message);
+}
+
+function shouldForceLocalPlan(plan: {
   actions: AssistantPlannedAction[];
   pendingAction?: AssistantPendingAction | null;
   clarifyState?: AssistantClarifyState | null;
   confirmedFromPending?: boolean;
+  lockLocalReply?: boolean;
 } | null) {
   if (!plan) {
     return false;
@@ -257,7 +285,7 @@ function shouldPreferLocalPlan(plan: {
   if (plan.clarifyState) {
     return true;
   }
-  return plan.actions.length > 0;
+  return false;
 }
 
 async function getClient() {
@@ -319,17 +347,23 @@ function formatMinuteLabel(minutes: number) {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
-function buildTodayFreeWindowSummary(todayCourses: CourseScheduleItem[]) {
+function buildRemainingFreeWindows(todayCourses: CourseScheduleItem[], baseInput?: string | Date | null) {
+  const base = toTaipei(baseInput) ?? nowInTaipei();
   const dayStart = toMinutes("09:00");
   const dayEnd = toMinutes("21:30");
+  const currentMinute = base.hour() * 60 + base.minute();
+  const activeStart = Math.max(dayStart, currentMinute);
+  if (activeStart >= dayEnd) {
+    return [] as Array<{ start: number; end: number }>;
+  }
   const blocked = todayCourses
     .map((course) => ({ start: toMinutes(course.startTime), end: toMinutes(course.endTime) }))
     .sort((left, right) => left.start - right.start);
   const windows: Array<{ start: number; end: number }> = [];
-  let cursor = dayStart;
+  let cursor = activeStart;
 
   for (const range of blocked) {
-    const start = Math.max(dayStart, range.start);
+    const start = Math.max(activeStart, range.start);
     const end = Math.min(dayEnd, range.end);
     if (end <= start) {
       continue;
@@ -344,8 +378,18 @@ function buildTodayFreeWindowSummary(todayCourses: CourseScheduleItem[]) {
     windows.push({ start: cursor, end: dayEnd });
   }
 
+  return windows;
+}
+
+export function buildTodayFreeWindowSummary(todayCourses: CourseScheduleItem[], baseInput?: string | Date | null) {
+  const base = toTaipei(baseInput) ?? nowInTaipei();
+  if (base.hour() * 60 + base.minute() >= toMinutes("21:30")) {
+    return "今天剩余可执行空档已结束（21:30 后）";
+  }
+  const windows = buildRemainingFreeWindows(todayCourses, baseInput);
+
   if (windows.length === 0) {
-    return "09:00-21:30 基本被课程占满";
+    return "今天剩余时段基本被课程占满";
   }
 
   return windows
@@ -371,25 +415,62 @@ function buildCourseAssistantContext(rawCourseSchedule: unknown): CourseAssistan
   };
 }
 
-function buildTodayArrangementSummary(input: {
+export function buildTodayArrangementSummary(input: {
   courseContext: CourseAssistantContext;
   mustDoTasks: DashboardTask[];
   shouldDoTasks: DashboardTask[];
   reminderTasks: DashboardTask[];
   canWaitTasks: DashboardTask[];
+  baseInput?: string | Date | null;
 }) {
-  const windows = input.courseContext.todayFreeWindowSummary;
-  const topMust = input.mustDoTasks.slice(0, 2).map((task) => task.title);
+  const base = toTaipei(input.baseInput) ?? nowInTaipei();
+  const windows = buildRemainingFreeWindows(input.courseContext.todayCourses, base.toDate());
+  const windowSummary =
+    windows.length > 0
+      ? windows.slice(0, 4).map((window) => `${formatMinuteLabel(window.start)}-${formatMinuteLabel(window.end)}`).join("，")
+      : "今天剩余可执行空档已结束";
+
+  const estimateMinutes = (task: DashboardTask) =>
+    typeof task.estimatedMinutes === "number" && task.estimatedMinutes >= 10 && task.estimatedMinutes <= 480
+      ? task.estimatedMinutes
+      : 45;
+  const fitInRemainingWindow = (task: DashboardTask) => {
+    const minutes = estimateMinutes(task);
+    return windows.some((window) => window.end - window.start >= minutes);
+  };
+  const sortByRealtimePriority = (left: DashboardTask, right: DashboardTask) => {
+    const leftFit = fitInRemainingWindow(left);
+    const rightFit = fitInRemainingWindow(right);
+    if (leftFit !== rightFit) {
+      return Number(rightFit) - Number(leftFit);
+    }
+    const leftDeadline = toTaipei(left.deadline)?.valueOf() ?? Number.MAX_SAFE_INTEGER;
+    const rightDeadline = toTaipei(right.deadline)?.valueOf() ?? Number.MAX_SAFE_INTEGER;
+    if (leftDeadline !== rightDeadline) {
+      return leftDeadline - rightDeadline;
+    }
+    return right.priorityScore - left.priorityScore;
+  };
+
+  const topMust = [...input.mustDoTasks].sort(sortByRealtimePriority).slice(0, 2).map((task) => task.title);
   const topReminder = input.reminderTasks.slice(0, 2).map((task) => task.title);
-  const fallback = input.shouldDoTasks.slice(0, 2).map((task) => task.title);
-  const canWait = input.canWaitTasks.slice(0, 2).map((task) => task.title);
+  const fallback = [...input.shouldDoTasks].sort(sortByRealtimePriority).slice(0, 2).map((task) => task.title);
+  const canWait = [...input.canWaitTasks].sort(sortByRealtimePriority).slice(0, 2).map((task) => task.title);
+  const overdueStartTasks = [...input.mustDoTasks, ...input.shouldDoTasks]
+    .filter((task) => {
+      const startAt = toTaipei(task.startAt ?? null);
+      return Boolean(startAt && startAt.isBefore(base));
+    })
+    .slice(0, 2)
+    .map((task) => task.title);
 
   return [
-    `可执行空档：${windows}`,
+    `剩余可执行空档：${windowSummary}`,
     `建议优先：${topMust.length > 0 ? topMust.join("、") : "暂无必须任务"}`,
     `提醒回看：${topReminder.length > 0 ? topReminder.join("、") : "暂无到点回看"}`,
     `可顺手推进：${fallback.length > 0 ? fallback.join("、") : "暂无"}`,
     `可后置：${canWait.length > 0 ? canWait.join("、") : "暂无"}`,
+    `已过期时段任务：${overdueStartTasks.length > 0 ? overdueStartTasks.join("、") : "无"}`,
   ].join("；");
 }
 
@@ -429,7 +510,7 @@ function formatClock(hour: number, minute: number) {
 }
 
 function parseClockTimeFromText(text: string) {
-  const direct = text.match(/(?:安排到|放到|改到|调到|从)\s*(?:今天|今日|今晚|今夜|明天|明日)?\s*(\d{1,2})(?::|点)(\d{0,2})/);
+  const direct = text.match(/(?:安排到|放到|改到|调到|从)\s*(?:今天|今日|今晚|今夜|明天|明日)?\s*(\d{1,2})(?::|：|点)(\d{0,2})/);
   if (!direct) {
     if (/(安排到|放到|改到|调到).*(今晚|今夜|晚上)/.test(text)) {
       return { hour: 19, minute: 0 };
@@ -451,7 +532,7 @@ function parseClockTimeFromText(text: string) {
 }
 
 function parseAnyClockTime(text: string) {
-  const direct = text.match(/(\d{1,2})(?::|点)(\d{0,2})/);
+  const direct = text.match(/(\d{1,2})(?::|：|点)(\d{0,2})/);
   if (direct) {
     const hour = Number(direct[1]);
     const minute = direct[2] ? Number(direct[2]) : 0;
@@ -490,7 +571,19 @@ function parseAnyClockTime(text: string) {
 }
 
 function hasExplicitClock(text: string) {
-  return /(\d{1,2}:\d{1,2})|(\d{1,2}点(?:半|[0-5]?\d分?)?)|(\d{1,2}时(?:[0-5]?\d分?)?)|([一二三四五六七八九十两]{1,3}点(?:半)?)/.test(text);
+  return /(\d{1,2}[:：]\d{1,2})|(\d{1,2}点(?:半|[0-5]?\d分?)?)|(\d{1,2}时(?:[0-5]?\d分?)?)|([一二三四五六七八九十两]{1,3}点(?:半)?)/.test(text);
+}
+
+function parseDeadlineISOFromMessage(text: string) {
+  if (!/(截止|到期|ddl|due)/i.test(text)) {
+    return null;
+  }
+  const parsedClock = parseAnyClockTime(text);
+  if (!parsedClock) {
+    return null;
+  }
+  const base = /(明天|明日)/.test(text) ? nowInTaipei().add(1, "day") : nowInTaipei();
+  return base.hour(parsedClock.hour).minute(parsedClock.minute).second(0).millisecond(0).toISOString();
 }
 
 function isArrangementIntent(text: string) {
@@ -500,12 +593,97 @@ function isArrangementIntent(text: string) {
 function resolveAssistantStrategyPolicy(rawCourseTableConfig: unknown): AssistantStrategyPolicy {
   const fromConfig = (rawCourseTableConfig && typeof rawCourseTableConfig === "object" ? (rawCourseTableConfig as Record<string, unknown>).assistantPolicy : null) as Record<string, unknown> | null;
   const maxClarifyTurns = Number(fromConfig?.maxClarifyTurns);
+  const ruleMode = fromConfig?.ruleMode === "strict" ? "strict" : "balanced";
 
   return {
     autoSelectCurrentBestTaskOnArrange: fromConfig?.autoSelectCurrentBestTaskOnArrange !== false,
     autoSelectCurrentBestTaskOnStatus: fromConfig?.autoSelectCurrentBestTaskOnStatus !== false,
     maxClarifyTurns: Number.isInteger(maxClarifyTurns) && maxClarifyTurns >= 1 && maxClarifyTurns <= 3 ? maxClarifyTurns : 1,
+    ruleMode,
   };
+}
+
+function toObjectRecord(input: unknown) {
+  return input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : {};
+}
+
+function normalizeLearningProfile(rawCourseTableConfig: unknown): AssistantLearningProfile {
+  const root = toObjectRecord(rawCourseTableConfig);
+  const rawProfile = toObjectRecord(root.assistantLearningProfile);
+  const rawFeedback = toObjectRecord(rawProfile.feedback);
+  const rawPreferences = toObjectRecord(rawProfile.preferences);
+  const confirmCount = Math.max(0, Number(rawFeedback.confirmCount) || 0);
+  const cancelCount = Math.max(0, Number(rawFeedback.cancelCount) || 0);
+  const clarifyCount = Math.max(0, Number(rawFeedback.clarifyCount) || 0);
+  const defaultExecutionMode =
+    rawPreferences.defaultExecutionMode === "direct_low_risk" ? "direct_low_risk" : "preview_first";
+  const replyStyle = rawPreferences.replyStyle === "concise" ? "concise" : "natural";
+  const updatedAt = typeof rawProfile.updatedAt === "string" && rawProfile.updatedAt ? rawProfile.updatedAt : nowInTaipei().toISOString();
+
+  return {
+    version: 1,
+    feedback: {
+      confirmCount,
+      cancelCount,
+      clarifyCount,
+    },
+    preferences: {
+      defaultExecutionMode,
+      replyStyle,
+    },
+    updatedAt,
+  };
+}
+
+function evolveLearningProfile(profile: AssistantLearningProfile, event: AssistantFeedbackEvent): AssistantLearningProfile {
+  const next: AssistantLearningProfile = {
+    ...profile,
+    feedback: {
+      ...profile.feedback,
+    },
+    preferences: {
+      ...profile.preferences,
+    },
+    updatedAt: nowInTaipei().toISOString(),
+  };
+
+  if (event === "confirm_pending_action") {
+    next.feedback.confirmCount += 1;
+  } else if (event === "cancel_pending_action") {
+    next.feedback.cancelCount += 1;
+  } else if (event === "clarify_needed") {
+    next.feedback.clarifyCount += 1;
+  }
+
+  const totalDecisions = next.feedback.confirmCount + next.feedback.cancelCount;
+  const cancelRate = totalDecisions > 0 ? next.feedback.cancelCount / totalDecisions : 0;
+  if (next.feedback.confirmCount >= 6 && cancelRate <= 0.2) {
+    next.preferences.defaultExecutionMode = "direct_low_risk";
+  }
+  if (next.feedback.cancelCount >= 2 && cancelRate >= 0.3) {
+    next.preferences.defaultExecutionMode = "preview_first";
+  }
+  if (next.feedback.clarifyCount >= 3) {
+    next.preferences.replyStyle = "concise";
+  }
+
+  return next;
+}
+
+function buildAssistantProfileSummary(profile: AssistantLearningProfile) {
+  return [
+    `执行偏好=${profile.preferences.defaultExecutionMode}`,
+    `回复风格=${profile.preferences.replyStyle}`,
+    `历史确认=${profile.feedback.confirmCount}`,
+    `历史取消=${profile.feedback.cancelCount}`,
+    `历史澄清=${profile.feedback.clarifyCount}`,
+  ].join("；");
+}
+
+async function persistLearningProfile(profile: AssistantLearningProfile) {
+  await patchCourseTableConfig({
+    assistantLearningProfile: profile,
+  });
 }
 
 function normalizeAssistantStartAtIso(value: string | null) {
@@ -635,102 +813,6 @@ const statusKeywordMap: Array<{ pattern: RegExp; status: TaskStatus; note?: stri
   { pattern: /恢复可执行|可执行|重新开始/, status: "ready" },
 ];
 
-function buildLocalSummary(
-  message: string,
-  currentBestTask: DashboardTask | null,
-  topTasksForToday: DashboardTask[],
-  reviewTasks: DashboardTask[],
-  waitingTasks: DashboardTask[],
-  dueWaitingTasks: DashboardTask[],
-  tasks: DashboardTask[],
-  courseContext?: CourseAssistantContext,
-) {
-  const looksLikeMutation =
-    /(?:新增|添加|创建|加|记).*(任务|待办)/.test(message) ||
-    /(安排到|排到|标记为|改成|设为|更新|修改|调到|放到|删除|删掉|移除)/.test(message);
-
-  if (/现在最该做|最紧急|先做什么|该做什么|今天必须推进/.test(message)) {
-    if (!currentBestTask) {
-      return "当前没有明确需要立刻推进的任务。";
-    }
-
-    return `现在最该做的是「${currentBestTask.title}」。截止 ${formatDeadline(currentBestTask.deadline)}，原因是：${currentBestTask.priorityReason}。下一步建议：${currentBestTask.nextActionSuggestion}`;
-  }
-
-  if (!looksLikeMutation && /待确认|确认队列|需要确认/.test(message)) {
-    if (reviewTasks.length === 0) {
-      return "当前没有待确认任务。";
-    }
-
-    return `当前有 ${reviewTasks.length} 条待确认任务，最值得先看的有：${reviewTasks
-      .slice(0, 3)
-      .map((task) => `「${task.title}」`)
-      .join("、")}。`;
-  }
-
-  if (!looksLikeMutation && /回看|等待任务|等待中/.test(message)) {
-    const focus = dueWaitingTasks.length > 0 ? dueWaitingTasks : waitingTasks;
-    if (focus.length === 0) {
-      return "当前没有需要回看的等待任务。";
-    }
-
-    return `当前有 ${waitingTasks.length} 条等待任务，其中优先回看的有：${focus
-      .slice(0, 3)
-      .map((task) => `「${task.title}」`)
-      .join("、")}。`;
-  }
-
-  if (/全部任务|有哪些任务|总结一下任务|任务总览/.test(message)) {
-    const activeTasks = tasks.filter((task) => !["done", "submitted", "ignored"].includes(task.status));
-    const completedCount = tasks.filter((task) => ["done", "submitted"].includes(task.status)).length;
-    const top = activeTasks.slice(0, 5).map((task) => `「${task.title}」(${statusLabels[task.status]})`);
-    const urgentCount = topTasksForToday.length;
-    if (activeTasks.length === 0) {
-      return completedCount > 0 ? `当前没有活跃任务了，现有 ${completedCount} 条任务都已经处理完成。` : "当前没有活跃任务。";
-    }
-
-    return `当前共有 ${activeTasks.length} 条活跃任务，其中 ${reviewTasks.length} 条待确认、${waitingTasks.length} 条等待中、${urgentCount} 条今天建议优先推进。当前排在前面的有：${top.join("、")}。`;
-  }
-
-  if (/现在我有哪些任务|我有哪些任务/.test(message)) {
-    const activeTasks = tasks.filter((task) => !["done", "submitted", "ignored"].includes(task.status));
-    const completedCount = tasks.filter((task) => ["done", "submitted"].includes(task.status)).length;
-
-    if (activeTasks.length === 0) {
-      return completedCount > 0 ? `当前没有活跃任务了，现有 ${completedCount} 条任务都已经处理完成。` : "当前没有活跃任务。";
-    }
-
-    return `当前还有 ${activeTasks.length} 条活跃任务：${activeTasks
-      .slice(0, 5)
-      .map((task) => `「${task.title}」(${statusLabels[task.status]})`)
-      .join("、")}。`;
-  }
-
-  if (!looksLikeMutation && /(今天|今日).*(课表|课程)|课表.*(今天|今日)|今天有什么课/.test(message)) {
-    if (!courseContext) {
-      return "当前没有读到课表配置。你可以先在设置里录入课程表。";
-    }
-
-    return `今天课程：${courseContext.todayCourseSummary} 可执行空档：${courseContext.todayFreeWindowSummary}。`;
-  }
-
-  if (!looksLikeMutation && /(空档|空闲|什么时候有空|有空时间)/.test(message)) {
-    if (!courseContext) {
-      return "当前没有读到课表配置，暂时无法按课程计算空档。";
-    }
-    return `按今日课表，主要空档是：${courseContext.todayFreeWindowSummary}。`;
-  }
-
-  if (!looksLikeMutation && /(今日日程安排|今天安排|读取安排数据|安排数据|排版数据|今天怎么排)/.test(message)) {
-    if (!courseContext?.todayArrangementSummary) {
-      return "当前还没有可读的今日日程安排数据。";
-    }
-    return `当前今日日程安排：${courseContext.todayArrangementSummary}。`;
-  }
-
-  return null;
-}
-
 function collectReferencedTaskIds(reply: string, actions: AssistantPlannedAction[], fallbackTask: DashboardTask | null) {
   if (actions.length > 0) {
     return [
@@ -763,8 +845,67 @@ function getPendingActionTaskIds(action: AssistantPendingAction | null | undefin
   ];
 }
 
+type AssistantActionRisk = "high" | "medium" | "low";
+
+function getActionRiskLevel(action: AssistantPlannedAction): AssistantActionRisk {
+  if (action.type === "delete_task" || action.type === "auto_fix_time_semantics") {
+    return "high";
+  }
+  if (action.type === "create_task" || action.type === "update_status") {
+    return "high";
+  }
+  if (action.type === "update_task_core" || action.type === "schedule_follow_up") {
+    return "medium";
+  }
+  return "low";
+}
+
 function isHighRiskAction(action: AssistantPlannedAction) {
-  return action.type === "update_status" || action.type === "create_task" || action.type === "delete_task" || action.type === "update_task_core" || action.type === "auto_fix_time_semantics";
+  return getActionRiskLevel(action) === "high";
+}
+
+function resolveExecutionMode(
+  context?: AssistantConversationContext | null,
+  profile?: AssistantLearningProfile,
+): AssistantExecutionMode {
+  if (context?.executionMode === "direct_low_risk") {
+    return "direct_low_risk";
+  }
+  if (context?.executionMode === "preview_first") {
+    return "preview_first";
+  }
+  return profile?.preferences.defaultExecutionMode ?? "preview_first";
+}
+
+function shouldRequireConfirmation(
+  actions: AssistantPlannedAction[],
+  executionMode: AssistantExecutionMode,
+  policy: AssistantStrategyPolicy,
+) {
+  if (actions.length === 0) {
+    return false;
+  }
+  const hasHighRisk = actions.some((action) => getActionRiskLevel(action) === "high");
+  const hasMediumRisk = actions.some((action) => getActionRiskLevel(action) === "medium");
+  if (executionMode === "preview_first") {
+    if (policy.ruleMode === "strict") {
+      return true;
+    }
+    // 分层策略（balanced）：高风险确认；中风险仅提示；低风险直接执行。
+    return hasHighRisk;
+  }
+  if (policy.ruleMode === "strict") {
+    return hasHighRisk || hasMediumRisk;
+  }
+  return hasHighRisk;
+}
+
+function buildMediumRiskNotes(actions: AssistantPlannedAction[], taskMap: Map<string, DashboardTask>) {
+  const mediumActions = actions.filter((action) => getActionRiskLevel(action) === "medium");
+  if (mediumActions.length === 0) {
+    return [] as string[];
+  }
+  return mediumActions.map((action) => `中风险提示：${describeAction(action, taskMap)}`);
 }
 
 function buildActionImpact(action: AssistantPlannedAction, taskMap: Map<string, DashboardTask>): AssistantImpactItem {
@@ -867,8 +1008,47 @@ function describeAction(action: AssistantPlannedAction, taskMap: Map<string, Das
   }
 
   if (action.type === "update_task_core") {
-    const changed = Object.keys(action.patch);
-    return `更新「${title}」字段：${changed.join("、")}`;
+    const patchEntries = Object.entries(action.patch);
+    const formatPatchValue = (key: string, value: unknown) => {
+      if (value === null) {
+        return "清空";
+      }
+      if (value === undefined) {
+        return "未设置";
+      }
+      if (key === "status" && typeof value === "string" && value in statusLabels) {
+        return statusLabels[value as TaskStatus];
+      }
+      if (key.endsWith("ISO") || key.endsWith("At")) {
+        return formatDeadline(typeof value === "string" || value instanceof Date ? value : null);
+      }
+      if (Array.isArray(value)) {
+        return value.map((item) => String(item)).join("/");
+      }
+      if (typeof value === "boolean") {
+        return value ? "是" : "否";
+      }
+      return String(value);
+    };
+    const readTaskValueByPatchKey = (field: string): unknown => {
+      if (!task) return undefined;
+      const patchKeyToTaskKey: Record<string, string> = {
+        startAtISO: "startAt",
+        deadlineISO: "deadline",
+        snoozeUntilISO: "snoozeUntil",
+        recurrenceStartISO: "recurrenceStartAt",
+        recurrenceUntilISO: "recurrenceUntil",
+        nextCheckAtISO: "nextCheckAt",
+      };
+      const taskKey = patchKeyToTaskKey[field] ?? field;
+      return (task as Record<string, unknown>)[taskKey];
+    };
+    const preview = patchEntries.map(([key, value]) => {
+      const before = formatPatchValue(key, readTaskValueByPatchKey(key));
+      const after = formatPatchValue(key, value);
+      return `${key}: ${before} -> ${after}`;
+    });
+    return `更新「${title}」字段：${preview.join("；")}`;
   }
 
   if (action.mode === "increment") {
@@ -896,6 +1076,9 @@ function findExplicitlyMentionedTasks(tasks: DashboardTask[], message: string) {
 function reconcileTaskCoreSchedulePatch(
   action: Extract<AssistantPlannedAction, { type: "update_task_core" }>,
   taskMap: Map<string, DashboardTask>,
+  options?: {
+    autoAdjustDeadlineOnConflict?: boolean;
+  },
 ) {
   const task = taskMap.get(action.taskId);
   if (!task) {
@@ -912,6 +1095,13 @@ function reconcileTaskCoreSchedulePatch(
 
   if (!resolvedStartAt || !resolvedDeadline || !resolvedStartAt.isAfter(resolvedDeadline)) {
     return { action, note: "" };
+  }
+
+  if (!options?.autoAdjustDeadlineOnConflict) {
+    return {
+      action,
+      note: `「${task.title}」开始时间晚于截止时间。已保留你的原始设置，请确认是否要同时顺延截止。`,
+    };
   }
 
   const estimateMinutes = (() => {
@@ -938,15 +1128,25 @@ function reconcileTaskCoreSchedulePatch(
   };
 }
 
-function normalizePlannedActions(actions: AssistantPlannedAction[], taskMap: Map<string, DashboardTask>) {
+function normalizePlannedActions(
+  actions: AssistantPlannedAction[],
+  taskMap: Map<string, DashboardTask>,
+  policy: AssistantStrategyPolicy,
+) {
   const normalized: AssistantPlannedAction[] = [];
   const notes: string[] = [];
   for (const action of actions) {
+    if ("taskId" in action && !taskMap.has(action.taskId)) {
+      notes.push(`底线拦截：未找到 taskId=${action.taskId}，该动作已忽略。`);
+      continue;
+    }
     if (action.type !== "update_task_core") {
       normalized.push(action);
       continue;
     }
-    const reconciled = reconcileTaskCoreSchedulePatch(action, taskMap);
+    const reconciled = reconcileTaskCoreSchedulePatch(action, taskMap, {
+      autoAdjustDeadlineOnConflict: policy.ruleMode === "strict",
+    });
     normalized.push(reconciled.action);
     if (reconciled.note) {
       notes.push(reconciled.note);
@@ -988,6 +1188,8 @@ function buildLocalPlan(input: {
   pendingAction?: AssistantPendingAction | null;
   clarifyState?: AssistantClarifyState | null;
   confirmedFromPending?: boolean;
+  lockLocalReply?: boolean;
+  invokedTools?: string[];
 } | null {
   const { message, tasks, currentBestTask, topTasksForToday, reviewTasks, waitingTasks, dueWaitingTasks, courseContext, context, policy } = input;
   const taskMap = new Map(tasks.map((task) => [task.id, task]));
@@ -1099,13 +1301,24 @@ function buildLocalPlan(input: {
 
   const summaryReply = resolveReviewIntent
     ? null
-    : buildLocalSummary(message, currentBestTask, topTasksForToday, reviewTasks, waitingTasks, dueWaitingTasks, tasks, courseContext);
-  if (summaryReply) {
+    : resolveSummaryToolFromMessage({
+      message,
+      currentBestTask,
+      topTasksForToday,
+      reviewTasks,
+      waitingTasks,
+      dueWaitingTasks,
+      tasks,
+      courseContext,
+    });
+  if (summaryReply?.reply) {
     return {
-      reply: summaryReply,
+      reply: summaryReply.reply,
       actions: [] as AssistantPlannedAction[],
-      referencedTaskIds: collectReferencedTaskIds(summaryReply, [], currentBestTask),
+      referencedTaskIds: collectReferencedTaskIds(summaryReply.reply, [], currentBestTask),
       pendingAction: context?.pendingAction ?? null,
+      lockLocalReply: true,
+      invokedTools: [summaryReply.tool],
     };
   }
 
@@ -1126,6 +1339,50 @@ function buildLocalPlan(input: {
     ((statusKeywordMap.find((item) => item.pattern.test(message)) && policy.autoSelectCurrentBestTaskOnStatus) ? currentBestTask : null);
   const task = inferredTask;
   const parsedTime = parseClockTimeFromText(message);
+  const parsedDeadlineISO = parseDeadlineISOFromMessage(message);
+
+  if (parsedDeadlineISO) {
+    const explicitTargets = findExplicitlyMentionedTasks(tasks, message);
+    const batchKeyword = /(批量|多个|几条|这些|这几条|全部|所有|一起|统统|三个任务|3个任务|这三个|这3个)/.test(message);
+    let targets: DashboardTask[] = [];
+
+    if (explicitTargets.length > 0) {
+      targets = explicitTargets;
+    } else if (batchKeyword) {
+      const active = tasks.filter((item) => !["done", "submitted", "ignored"].includes(item.status));
+      const preferred = topTasksForToday.length > 0 ? topTasksForToday : active;
+      const targetCount = /(三个|3个)/.test(message) ? 3 : Math.min(6, preferred.length);
+      targets = preferred.slice(0, targetCount);
+    } else if (task) {
+      targets = [task];
+    }
+
+    if (targets.length === 0) {
+      return {
+        reply: "我知道你想改截止时间，但还没定位到具体任务。请补任务标题，或说“把这三个任务都改成今天23:59截止”。",
+        actions: [],
+        referencedTaskIds: [],
+        pendingAction: null,
+      };
+    }
+
+    const actions: AssistantPlannedAction[] = targets.map((target) => ({
+      type: "update_task_core",
+      taskId: target.id,
+      patch: {
+        deadlineISO: parsedDeadlineISO,
+      },
+    }));
+    const normalized = normalizePlannedActions(actions, taskMap, policy);
+    const pendingAction = buildPendingActionBundle(normalized.actions, taskMap, normalized.notes);
+    return {
+      reply: pendingAction.previewText,
+      actions: [],
+      referencedTaskIds: targets.map((target) => target.id),
+      pendingAction,
+      clarifyState: null,
+    };
+  }
 
   if (deleteIntent) {
     const explicitTargets = findExplicitlyMentionedTasks(tasks, message);
@@ -1343,7 +1600,7 @@ function buildLocalPlan(input: {
 
     if (clarifiedTask && clarifiedHour !== null && clarifiedMinute !== null) {
       const startAtISO = nowInTaipei().hour(clarifiedHour).minute(clarifiedMinute).second(0).millisecond(0).toISOString();
-      const normalized = normalizePlannedActions([{ type: "update_task_core", taskId: clarifiedTask.id, patch: { startAtISO } }], taskMap);
+      const normalized = normalizePlannedActions([{ type: "update_task_core", taskId: clarifiedTask.id, patch: { startAtISO } }], taskMap, policy);
       const pendingAction = buildPendingActionBundle(normalized.actions, taskMap, normalized.notes);
       return {
         reply: pendingAction.previewText,
@@ -1361,7 +1618,7 @@ function buildLocalPlan(input: {
       const fallbackMinute = clarifiedMinute ?? 0;
       if (fallbackTask) {
         const startAtISO = nowInTaipei().hour(fallbackHour).minute(fallbackMinute).second(0).millisecond(0).toISOString();
-        const normalized = normalizePlannedActions([{ type: "update_task_core", taskId: fallbackTask.id, patch: { startAtISO } }], taskMap);
+        const normalized = normalizePlannedActions([{ type: "update_task_core", taskId: fallbackTask.id, patch: { startAtISO } }], taskMap, policy);
         const pendingAction = buildPendingActionBundle(
           normalized.actions,
           taskMap,
@@ -1572,7 +1829,7 @@ function buildLocalPlan(input: {
     }
 
     if (actions.length > 0) {
-      const normalized = normalizePlannedActions(actions, taskMap);
+      const normalized = normalizePlannedActions(actions, taskMap, policy);
       const pendingAction = buildPendingActionBundle(normalized.actions, taskMap, normalized.notes);
       return {
         reply: pendingAction.previewText,
@@ -1609,7 +1866,7 @@ function buildLocalPlan(input: {
   return null;
 }
 
-function buildAiSystemPrompt(skill: AssistantSkill, toolCatalog: string[]) {
+function buildAiSystemPrompt(skill: AssistantSkill, toolCatalog: string[], profileSummary: string) {
   return `你是首页里的中文任务管理助手。你可以阅读全部任务，并帮助用户做两类事：
 1. 回答任务问题，例如“现在最该做什么”“待确认里有什么”“哪些任务快到期了”“今天课表和空档是什么”。
 2. 在用户明确要求时执行安全管理动作。
@@ -1642,11 +1899,14 @@ actions 仅允许以下类型：
 2.3 任何涉及 startAtISO/deadlineISO 的调整，都要确保开始时间不晚于截止时间；若用户明确要改到更晚时间，应一并给出截止顺延方案。
 3. 永远不要编造 taskId。
 4. 不要输出任何 JSON 之外的说明。
-5. 语气直接、简洁、会做事。
+5. 回复要自然，不要机械复述“截止/原因/下一步”字段，不要套固定模板。
+6. 语气直接、简洁、会做事。
+7. 输出动作前做一次自检：动作是否真正响应用户请求、taskId 是否明确、是否有更小代价方案。
 
 当前技能：${skill}
 技能指令：${getSkillInstruction(skill)}
-可用工具：${toolCatalog.join(" | ")}`;
+可用工具：${toolCatalog.join(" | ")}
+用户偏好画像：${profileSummary}`;
 }
 
 function buildAiUserPrompt(args: {
@@ -1704,6 +1964,23 @@ function buildLoadedDataSummary(
   return `已读取：任务总数 ${dashboard.tasks.length}；待确认 ${dashboard.reviewTasks.length}；等待 ${dashboard.waitingTasks.length}`;
 }
 
+function buildAiSelfReviewPrompt(userMessage: string, draftPlan: { reply: string; actions: unknown[] }) {
+  return `请你审阅下面这份“任务助手计划草稿”，并输出最终 JSON（只输出 JSON，不要解释）：
+
+用户请求：
+${userMessage}
+
+计划草稿：
+${JSON.stringify(draftPlan)}
+
+审阅要求：
+1. 保留用户意图，不要过度改写。
+2. 删除不必要或风险过高且证据不足的动作。
+3. 如果 taskId 不明确，清空 actions，并在 reply 里要求澄清。
+4. reply 要自然、简洁，不要机械复述字段。
+5. 输出格式必须是 {"reply":"...","actions":[...]}。`;
+}
+
 async function planWithAi(args: {
   message: string;
   history: AssistantHistoryMessage[];
@@ -1716,6 +1993,7 @@ async function planWithAi(args: {
   skill: AssistantSkill;
   toolCatalog: string[];
   loadedDataSummary: string;
+  profileSummary: string;
   context?: AssistantConversationContext;
 }) {
   const { client, config } = await getClient();
@@ -1725,13 +2003,13 @@ async function planWithAi(args: {
   }
 
   try {
-    const completion = await client.chat.completions.create({
+    const plannerCompletion = await client.chat.completions.create({
       model: config.model,
       temperature: 0.2,
       messages: [
         {
           role: "system",
-          content: buildAiSystemPrompt(args.skill, args.toolCatalog),
+          content: buildAiSystemPrompt(args.skill, args.toolCatalog, args.profileSummary),
         },
         {
           role: "user",
@@ -1740,24 +2018,87 @@ async function planWithAi(args: {
       ],
     });
 
-    const raw = completion.choices[0]?.message?.content?.trim();
-    if (!raw) {
+    const plannerRaw = plannerCompletion.choices[0]?.message?.content?.trim();
+    if (!plannerRaw) {
       return null;
     }
 
-    const parsed = extractJsonObject(raw);
-    if (!parsed) {
+    const plannerParsed = extractJsonObject(plannerRaw);
+    if (!plannerParsed) {
       return null;
     }
 
-    return assistantResponseSchema.parse(parsed);
+    const draftPlan = assistantResponseSchema.parse(plannerParsed);
+
+    try {
+      const reviewerCompletion = await client.chat.completions.create({
+        model: config.model,
+        temperature: 0,
+        messages: [
+          {
+            role: "system",
+            content: buildAiSystemPrompt(args.skill, args.toolCatalog, args.profileSummary),
+          },
+          {
+            role: "user",
+            content: buildAiSelfReviewPrompt(args.message, draftPlan),
+          },
+        ],
+      });
+
+      const reviewerRaw = reviewerCompletion.choices[0]?.message?.content?.trim();
+      if (!reviewerRaw) {
+        return draftPlan;
+      }
+      const reviewerParsed = extractJsonObject(reviewerRaw);
+      if (!reviewerParsed) {
+        return draftPlan;
+      }
+      return assistantResponseSchema.parse(reviewerParsed);
+    } catch {
+      return draftPlan;
+    }
   } catch {
     return null;
   }
 }
 
-async function executeAction(action: AssistantPlannedAction, taskMap: Map<string, DashboardTask>) {
-  if (action.type === "create_task") {
+type AssistantToolExecuteResult = {
+  taskIds: string[];
+  taskTitle: string;
+  summary: string;
+  createdTaskCards: Array<{
+    taskId: string;
+    title: string;
+    deadlineLabel: string;
+    statusLabel: string;
+    needsHumanReview: boolean;
+  }>;
+  impact: AssistantImpactItem;
+  undoOperation?: AssistantUndoOperation;
+};
+
+type AssistantWriteToolHandler = (action: AssistantPlannedAction, taskMap: Map<string, DashboardTask>) => Promise<AssistantToolExecuteResult | null>;
+
+function buildTaskSnapshot(task: DashboardTask) {
+  return {
+    taskId: task.id,
+    taskTitle: task.title,
+    status: task.status,
+    needsHumanReview: task.needsHumanReview,
+    reviewResolved: task.reviewResolved,
+    reviewReasons: Array.isArray(task.reviewReasons) ? task.reviewReasons.map((item) => String(item)) : [],
+    waitingFor: task.waitingFor,
+    waitingReasonType: task.waitingReasonType,
+    waitingReasonText: task.waitingReasonText,
+    nextCheckAt: task.nextCheckAt ? new Date(task.nextCheckAt).toISOString() : null,
+  };
+}
+
+const assistantWriteToolRegistry: Record<AssistantPlannedAction["type"], AssistantWriteToolHandler> = {
+  create_task: async (rawAction) => {
+    if (rawAction.type !== "create_task") return null;
+    const action = rawAction;
     const created = await createAssistantTask(action.sourceText);
     return {
       taskIds: created.tasks.map((task) => task.id),
@@ -1779,14 +2120,15 @@ async function executeAction(action: AssistantPlannedAction, taskMap: Map<string
         changedFields: ["source", "tasks", "status", "needsHumanReview"],
       },
       undoOperation: {
-        type: "delete_source" as const,
+        type: "delete_source",
         sourceId: created.source.id,
         sourceLabel: created.source.title || "首页 AI 助手",
       },
     };
-  }
-
-  if (action.type === "delete_task") {
+  },
+  delete_task: async (rawAction, taskMap) => {
+    if (rawAction.type !== "delete_task") return null;
+    const action = rawAction;
     const task = taskMap.get(action.taskId);
     await deleteTask(action.taskId);
     return {
@@ -1796,9 +2138,10 @@ async function executeAction(action: AssistantPlannedAction, taskMap: Map<string
       createdTaskCards: [],
       impact: buildActionImpact(action, taskMap),
     };
-  }
-
-  if (action.type === "auto_fix_time_semantics") {
+  },
+  auto_fix_time_semantics: async (rawAction, taskMap) => {
+    if (rawAction.type !== "auto_fix_time_semantics") return null;
+    const action = rawAction;
     const fixed = await fixAllTaskTimeSemanticConflicts({ minimumBufferMinutes: 20, limit: 200 });
     return {
       taskIds: fixed.results.map((item) => item.taskId),
@@ -1807,26 +2150,13 @@ async function executeAction(action: AssistantPlannedAction, taskMap: Map<string
       createdTaskCards: [],
       impact: buildActionImpact(action, taskMap),
     };
-  }
-
-  const task = taskMap.get(action.taskId);
-  if (!task) {
-    return null;
-  }
-
-  if (action.type === "update_status") {
-    const snapshot = {
-      taskId: task.id,
-      taskTitle: task.title,
-      status: task.status,
-      needsHumanReview: task.needsHumanReview,
-      reviewResolved: task.reviewResolved,
-      reviewReasons: Array.isArray(task.reviewReasons) ? task.reviewReasons.map((item) => String(item)) : [],
-      waitingFor: task.waitingFor,
-      waitingReasonType: task.waitingReasonType,
-      waitingReasonText: task.waitingReasonText,
-      nextCheckAt: task.nextCheckAt ? new Date(task.nextCheckAt).toISOString() : null,
-    };
+  },
+  update_status: async (rawAction, taskMap) => {
+    if (rawAction.type !== "update_status") return null;
+    const action = rawAction;
+    const task = taskMap.get(action.taskId);
+    if (!task) return null;
+    const snapshot = buildTaskSnapshot(task);
     await updateTaskStatus(action.taskId, action.status, action.note);
     return {
       taskIds: [task.id],
@@ -1834,23 +2164,15 @@ async function executeAction(action: AssistantPlannedAction, taskMap: Map<string
       summary: `已将「${task.title}」标记为${statusLabels[action.status]}`,
       createdTaskCards: [],
       impact: buildActionImpact(action, taskMap),
-      undoOperation: { type: "restore_task_snapshot" as const, snapshot },
+      undoOperation: { type: "restore_task_snapshot", snapshot },
     };
-  }
-
-  if (action.type === "resolve_review") {
-    const snapshot = {
-      taskId: task.id,
-      taskTitle: task.title,
-      status: task.status,
-      needsHumanReview: task.needsHumanReview,
-      reviewResolved: task.reviewResolved,
-      reviewReasons: Array.isArray(task.reviewReasons) ? task.reviewReasons.map((item) => String(item)) : [],
-      waitingFor: task.waitingFor,
-      waitingReasonType: task.waitingReasonType,
-      waitingReasonText: task.waitingReasonText,
-      nextCheckAt: task.nextCheckAt ? new Date(task.nextCheckAt).toISOString() : null,
-    };
+  },
+  resolve_review: async (rawAction, taskMap) => {
+    if (rawAction.type !== "resolve_review") return null;
+    const action = rawAction;
+    const task = taskMap.get(action.taskId);
+    if (!task) return null;
+    const snapshot = buildTaskSnapshot(task);
     await resolveTaskReview(action.taskId, action.note);
     return {
       taskIds: [task.id],
@@ -1858,23 +2180,15 @@ async function executeAction(action: AssistantPlannedAction, taskMap: Map<string
       summary: `已确认「${task.title}」的解析结果`,
       createdTaskCards: [],
       impact: buildActionImpact(action, taskMap),
-      undoOperation: { type: "restore_task_snapshot" as const, snapshot },
+      undoOperation: { type: "restore_task_snapshot", snapshot },
     };
-  }
-
-  if (action.type === "schedule_follow_up") {
-    const snapshot = {
-      taskId: task.id,
-      taskTitle: task.title,
-      status: task.status,
-      needsHumanReview: task.needsHumanReview,
-      reviewResolved: task.reviewResolved,
-      reviewReasons: Array.isArray(task.reviewReasons) ? task.reviewReasons.map((item) => String(item)) : [],
-      waitingFor: task.waitingFor,
-      waitingReasonType: task.waitingReasonType,
-      waitingReasonText: task.waitingReasonText,
-      nextCheckAt: task.nextCheckAt ? new Date(task.nextCheckAt).toISOString() : null,
-    };
+  },
+  schedule_follow_up: async (rawAction, taskMap) => {
+    if (rawAction.type !== "schedule_follow_up") return null;
+    const action = rawAction;
+    const task = taskMap.get(action.taskId);
+    if (!task) return null;
+    const snapshot = buildTaskSnapshot(task);
     await scheduleTaskFollowUp(action.taskId, action.preset as WaitingFollowUpPreset, action.note);
     const label = action.preset === "tonight" ? "今晚" : action.preset === "tomorrow" ? "明天" : "下周";
     return {
@@ -1883,11 +2197,15 @@ async function executeAction(action: AssistantPlannedAction, taskMap: Map<string
       summary: `已将「${task.title}」设为${label}再回看`,
       createdTaskCards: [],
       impact: buildActionImpact(action, taskMap),
-      undoOperation: { type: "restore_task_snapshot" as const, snapshot },
+      undoOperation: { type: "restore_task_snapshot", snapshot },
     };
-  }
+  },
+  update_task_core: async (rawAction, taskMap) => {
+    if (rawAction.type !== "update_task_core") return null;
+    const action = rawAction;
+    const task = taskMap.get(action.taskId);
+    if (!task) return null;
 
-  if (action.type === "update_task_core") {
     const recurrenceDays = Array.isArray(task.recurrenceDays)
       ? task.recurrenceDays.map((item) => Number(item)).filter((item) => Number.isInteger(item) && item >= 0 && item <= 6)
       : [];
@@ -1958,44 +2276,53 @@ async function executeAction(action: AssistantPlannedAction, taskMap: Map<string
       createdTaskCards: [],
       impact: buildActionImpact(action, taskMap),
     };
-  }
-
-  if (action.mode === "increment") {
+  },
+  record_progress: async (rawAction, taskMap) => {
+    if (rawAction.type !== "record_progress") return null;
+    const action = rawAction;
+    const task = taskMap.get(action.taskId);
+    if (!task) return null;
     const completedAts = (task.progressLogs ?? []).map((log) => new Date(log.completedAt).toISOString());
-    await recordTaskProgress(action.taskId);
+    if (action.mode === "increment") {
+      await recordTaskProgress(action.taskId);
+      return {
+        taskIds: [task.id],
+        taskTitle: task.title,
+        summary: `已给「${task.title}」记录 1 次进度`,
+        createdTaskCards: [],
+        impact: buildActionImpact(action, taskMap),
+        undoOperation: { type: "restore_progress_logs", taskId: task.id, taskTitle: task.title, completedAts },
+      };
+    }
+    if (action.mode === "decrement") {
+      await undoTaskProgress(action.taskId);
+      return {
+        taskIds: [task.id],
+        taskTitle: task.title,
+        summary: `已给「${task.title}」撤回 1 次进度`,
+        createdTaskCards: [],
+        impact: buildActionImpact(action, taskMap),
+        undoOperation: { type: "restore_progress_logs", taskId: task.id, taskTitle: task.title, completedAts },
+      };
+    }
+    await resetTaskProgressCycle(action.taskId);
     return {
       taskIds: [task.id],
       taskTitle: task.title,
-      summary: `已给「${task.title}」记录 1 次进度`,
+      summary: `已重置「${task.title}」当前这一轮进度`,
       createdTaskCards: [],
       impact: buildActionImpact(action, taskMap),
-      undoOperation: { type: "restore_progress_logs" as const, taskId: task.id, taskTitle: task.title, completedAts },
+      undoOperation: { type: "restore_progress_logs", taskId: task.id, taskTitle: task.title, completedAts },
     };
-  }
+  },
+};
 
-  if (action.mode === "decrement") {
-    const completedAts = (task.progressLogs ?? []).map((log) => new Date(log.completedAt).toISOString());
-    await undoTaskProgress(action.taskId);
-    return {
-      taskIds: [task.id],
-      taskTitle: task.title,
-      summary: `已给「${task.title}」撤回 1 次进度`,
-      createdTaskCards: [],
-      impact: buildActionImpact(action, taskMap),
-      undoOperation: { type: "restore_progress_logs" as const, taskId: task.id, taskTitle: task.title, completedAts },
-    };
+async function executeAction(action: AssistantPlannedAction, taskMap: Map<string, DashboardTask>) {
+  const handler = assistantWriteToolRegistry[action.type];
+  if (!handler) {
+    return null;
   }
-
-  const completedAts = (task.progressLogs ?? []).map((log) => new Date(log.completedAt).toISOString());
-  await resetTaskProgressCycle(action.taskId);
-  return {
-    taskIds: [task.id],
-    taskTitle: task.title,
-    summary: `已重置「${task.title}」当前这一轮进度`,
-    createdTaskCards: [],
-    impact: buildActionImpact(action, taskMap),
-    undoOperation: { type: "restore_progress_logs" as const, taskId: task.id, taskTitle: task.title, completedAts },
-  };
+  return handler(action, taskMap);
 }
 
 function buildCourseContextWithArrangement(settings: Awaited<ReturnType<typeof getAppSettings>>, dashboard: DashboardData) {
@@ -2029,6 +2356,41 @@ export async function handleHomeAssistantMessage(input: {
     };
   }
 
+  if (isTimeToolQuery(message)) {
+    const currentTime = executeHomeAssistantSummaryTool({
+      tool: "get_current_time",
+      input: {},
+      context: {
+        message,
+        currentBestTask: null,
+        topTasksForToday: [],
+        reviewTasks: [],
+        waitingTasks: [],
+        dueWaitingTasks: [],
+        tasks: [],
+      },
+    });
+    return {
+      reply: currentTime.reply,
+      actionResults: [],
+      mode: "local",
+      changedTaskIds: [],
+      referencedTaskIds: [],
+      pendingAction: null,
+      undoAction: input.context?.undoAction ?? null,
+      clarifyState: null,
+      trace: [
+        {
+          step: 1,
+          planner: "local",
+          actions: ["get_current_time"],
+          results: [currentTime.result ?? ""],
+          stopReason: "local_plan_completed",
+        },
+      ],
+    };
+  }
+
   const dashboard = await getDashboardData("all");
   if (!dashboard.databaseReady) {
     return {
@@ -2045,10 +2407,25 @@ export async function handleHomeAssistantMessage(input: {
 
   const settings = await getAppSettings();
   const policy = resolveAssistantStrategyPolicy(settings.courseTableConfig);
+  let learningProfile = normalizeLearningProfile(settings.courseTableConfig);
   const courseContext = buildCourseContextWithArrangement(settings, dashboard);
   const skill = detectAssistantSkill(message);
   const toolCatalog = getSkillToolCatalog(skill);
   const loadedDataSummary = buildLoadedDataSummary(skill, dashboard, courseContext);
+
+  const isConfirmPending =
+    Boolean(input.context?.pendingAction)
+    && /^(确认|确认执行|是的|是|好的|好|行|可以|就这样|执行)$/u.test(message);
+  const isCancelPending =
+    Boolean(input.context?.pendingAction)
+    && /^(取消|不用了|先不了|算了|撤销这次操作)$/u.test(message);
+  if (isConfirmPending || isCancelPending) {
+    learningProfile = evolveLearningProfile(
+      learningProfile,
+      isConfirmPending ? "confirm_pending_action" : "cancel_pending_action",
+    );
+    await persistLearningProfile(learningProfile);
+  }
 
   if (input.context?.undoAction && /^(撤销|撤销上一步|回滚|撤回刚才的操作)$/u.test(message)) {
     const summaries: string[] = [];
@@ -2107,6 +2484,10 @@ export async function handleHomeAssistantMessage(input: {
     policy,
     context: input.context,
   });
+  if (localPlan?.clarifyState) {
+    learningProfile = evolveLearningProfile(learningProfile, "clarify_needed");
+    await persistLearningProfile(learningProfile);
+  }
 
   const aiPlan = await planWithAi({
     message,
@@ -2120,6 +2501,7 @@ export async function handleHomeAssistantMessage(input: {
     skill,
     toolCatalog,
     loadedDataSummary,
+    profileSummary: buildAssistantProfileSummary(learningProfile),
     context: input.context,
   });
 
@@ -2134,7 +2516,7 @@ export async function handleHomeAssistantMessage(input: {
     : null;
 
   const planned: AssistantResolvedPlan =
-    (shouldPreferLocalPlan(localPlan) ? localPlan : null) ??
+    (shouldForceLocalPlan(localPlan) ? localPlan : null) ??
     aiPlanned ??
     localPlan ??
     {
@@ -2147,15 +2529,33 @@ export async function handleHomeAssistantMessage(input: {
     };
 
   const taskMap = new Map(dashboard.tasks.map((task) => [task.id, task]));
-  const normalizedPlanned = normalizePlannedActions(planned.actions, taskMap);
-  const finalPlanned = {
+  const executionMode = resolveExecutionMode(input.context, learningProfile);
+  const normalizedPlanned = normalizePlannedActions(planned.actions, taskMap, policy);
+  let finalPlanned: AssistantResolvedPlan = {
     ...planned,
     actions: normalizedPlanned.actions,
   };
 
+  if (
+    executionMode === "direct_low_risk"
+    && !finalPlanned.confirmedFromPending
+    && finalPlanned.pendingAction
+    && finalPlanned.actions.length === 0
+  ) {
+    const pendingActions = finalPlanned.pendingAction.actions;
+    const hasHighRiskAction = pendingActions.some((action) => isHighRiskAction(action));
+    if (!hasHighRiskAction && pendingActions.length > 0) {
+      finalPlanned = {
+        ...finalPlanned,
+        reply: "已按当前执行模式直接执行低风险动作。",
+        actions: pendingActions,
+        pendingAction: null,
+      };
+    }
+  }
+
   if (!finalPlanned.confirmedFromPending && (finalPlanned.pendingAction?.actions.length ?? 0) === 0 && finalPlanned.actions.length > 0) {
-    const containsHighRisk = finalPlanned.actions.some((action) => isHighRiskAction(action));
-    if (containsHighRisk) {
+    if (shouldRequireConfirmation(finalPlanned.actions, executionMode, policy)) {
       const pendingAction = buildPendingActionBundle(finalPlanned.actions, taskMap, normalizedPlanned.notes);
       const previewTrace: NonNullable<AssistantResult["trace"]> = [
         {
@@ -2175,10 +2575,21 @@ export async function handleHomeAssistantMessage(input: {
         pendingAction,
         undoAction: input.context?.undoAction ?? null,
         clarifyState: finalPlanned.clarifyState ?? null,
-        trace: previewTrace,
+        trace: [
+          ...previewTrace,
+          ...(finalPlanned.invokedTools?.length
+            ? [{
+                step: 0,
+                planner: "local" as const,
+                actions: finalPlanned.invokedTools,
+                results: [],
+              }]
+            : []),
+        ],
       };
     }
   }
+  const initialMediumRiskNotes = buildMediumRiskNotes(finalPlanned.actions, taskMap);
   const actionResults: AssistantResult["actionResults"] = [];
   const undoOperations: AssistantUndoOperation[] = [];
   const actionSignatureSet = new Set<string>();
@@ -2188,12 +2599,15 @@ export async function handleHomeAssistantMessage(input: {
   let loopDashboard = dashboard;
   let loopCourseContext = courseContext;
   let loopReply = finalPlanned.reply;
+  if (initialMediumRiskNotes.length > 0) {
+    loopReply = `${loopReply}\n${initialMediumRiskNotes.join("；")}`;
+  }
 
   for (let step = 0; step < AI_AUTONOMOUS_MAX_STEPS; step += 1) {
     const stepNumber = step + 1;
     const stepPlanner: "local" | "ai" = step === 0 && planned === localPlan ? "local" : "ai";
     const loopTaskMap = new Map(loopDashboard.tasks.map((task) => [task.id, task]));
-    const normalizedLoop = normalizePlannedActions(latestPlanned.actions, loopTaskMap);
+    const normalizedLoop = normalizePlannedActions(latestPlanned.actions, loopTaskMap, policy);
     const currentActions = normalizedLoop.actions;
     const actionDescriptions = currentActions.map((action) => describeAction(action, loopTaskMap));
 
@@ -2201,7 +2615,7 @@ export async function handleHomeAssistantMessage(input: {
       trace.push({
         step: stepNumber,
         planner: stepPlanner,
-        actions: [],
+        actions: stepNumber === 1 && latestPlanned.invokedTools?.length ? latestPlanned.invokedTools : [],
         results: [],
         stopReason: "no_actions",
       });
@@ -2222,8 +2636,7 @@ export async function handleHomeAssistantMessage(input: {
     }
     actionSignatureSet.add(signature);
 
-    const containsHighRisk = currentActions.some((action) => isHighRiskAction(action));
-    if (step > 0 && containsHighRisk) {
+    if (step > 0 && shouldRequireConfirmation(currentActions, executionMode, policy)) {
       trace.push({
         step: stepNumber,
         planner: stepPlanner,
@@ -2316,6 +2729,7 @@ export async function handleHomeAssistantMessage(input: {
       skill,
       toolCatalog,
       loadedDataSummary: buildLoadedDataSummary(skill, loopDashboard, loopCourseContext),
+      profileSummary: buildAssistantProfileSummary(learningProfile),
       context: input.context,
     });
 
@@ -2384,6 +2798,7 @@ export function resolveLocalAssistantPlanForTest(input: {
     autoSelectCurrentBestTaskOnArrange: input.policy?.autoSelectCurrentBestTaskOnArrange ?? true,
     autoSelectCurrentBestTaskOnStatus: input.policy?.autoSelectCurrentBestTaskOnStatus ?? true,
     maxClarifyTurns: input.policy?.maxClarifyTurns ?? 1,
+    ruleMode: "balanced",
   };
   return buildLocalPlan({
     message: input.message,

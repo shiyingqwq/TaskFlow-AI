@@ -52,8 +52,9 @@ describe("home assistant local planner", () => {
     });
 
     expect(result?.actions).toEqual([]);
-    expect(result?.reply).toContain("现在最该做的是");
+    expect(result?.reply).toContain("先做");
     expect(result?.reply).toContain(currentBestTask.title);
+    expect(result?.reply).not.toContain("原因是：");
   });
 
   it("maps direct status commands to a safe status update action", () => {
@@ -83,6 +84,47 @@ describe("home assistant local planner", () => {
         },
       ],
     });
+  });
+
+  it("shows before and after values in high-risk update previews", () => {
+    const task = createTask({
+      id: "task-update-preview",
+      title: "复习卫生学",
+      deadline: new Date("2026-03-25T12:00:00.000Z"),
+    });
+    const result = resolveLocalAssistantPlanForTest({
+      message: "把复习卫生学安排到20:00",
+      tasks: [task],
+      currentBestTask: task,
+      topTasksForToday: [task],
+      reviewTasks: [],
+      waitingTasks: [],
+      dueWaitingTasks: [],
+    });
+
+    expect(result?.actions).toEqual([]);
+    expect(result?.reply).toContain("startAtISO:");
+    expect(result?.reply).toContain("->");
+  });
+
+  it("supports batch deadline updates with full-width colon time", () => {
+    const first = createTask({ id: "task-a", title: "复习医学心理学", status: "in_progress", deadline: null });
+    const second = createTask({ id: "task-b", title: "复习卫生学", status: "in_progress", deadline: null });
+    const third = createTask({ id: "task-c", title: "复习核医学", status: "in_progress", deadline: null });
+    const result = resolveLocalAssistantPlanForTest({
+      message: "现在的三个任务全部改成今天23：59截止吧",
+      tasks: [first, second, third],
+      currentBestTask: first,
+      topTasksForToday: [first, second, third],
+      reviewTasks: [],
+      waitingTasks: [],
+      dueWaitingTasks: [],
+    });
+
+    expect(result?.actions).toEqual([]);
+    expect(result?.pendingAction?.actions).toHaveLength(3);
+    expect(result?.reply).toContain("23:59");
+    expect(result?.reply).not.toContain("20:20");
   });
 
   it("asks for clarification when multiple tasks match equally", () => {
@@ -285,6 +327,40 @@ describe("home assistant local planner", () => {
     expect(result?.reply).toContain("核医学");
   });
 
+  it("returns current system time for time queries", () => {
+    const task = createTask();
+    const result = resolveLocalAssistantPlanForTest({
+      message: "现在几点了？",
+      tasks: [task],
+      currentBestTask: task,
+      topTasksForToday: [task],
+      reviewTasks: [],
+      waitingTasks: [],
+      dueWaitingTasks: [],
+    });
+
+    expect(result?.actions).toEqual([]);
+    expect(result?.reply).toContain("当前时间是");
+    expect(result?.reply).toMatch(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/);
+  });
+
+  it("returns current system time for polite read-time questions", () => {
+    const task = createTask();
+    const result = resolveLocalAssistantPlanForTest({
+      message: "您能读取现在的时间吗",
+      tasks: [task],
+      currentBestTask: task,
+      topTasksForToday: [task],
+      reviewTasks: [],
+      waitingTasks: [],
+      dueWaitingTasks: [],
+    });
+
+    expect(result?.actions).toEqual([]);
+    expect(result?.reply).toContain("当前时间是");
+    expect(result?.reply).toMatch(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/);
+  });
+
   it("maps schedule-arrangement commands to update_task_core action", () => {
     const task = createTask({
       id: "task-arrange",
@@ -311,12 +387,11 @@ describe("home assistant local planner", () => {
           taskId: "task-arrange",
           patch: {
             startAtISO: expect.any(String),
-            deadlineISO: expect.any(String),
           },
         },
       ],
     });
-    expect(result?.reply).toContain("联动将截止顺延");
+    expect(result?.reply).toContain("开始时间晚于截止时间");
   });
 
   it("asks a follow-up when arrangement lacks task or time, then keeps clarify context", () => {
@@ -369,11 +444,11 @@ describe("home assistant local planner", () => {
           taskId: "task-auto-arrange",
           patch: {
             startAtISO: expect.any(String),
-            deadlineISO: expect.any(String),
           },
         },
       ],
     });
+    expect(result?.reply).toContain("开始时间晚于截止时间");
     expect(result?.clarifyState).toBeNull();
   });
 
@@ -401,7 +476,6 @@ describe("home assistant local planner", () => {
       taskId: "task-chain",
       patch: {
         startAtISO: expect.any(String),
-        deadlineISO: expect.any(String),
       },
     });
     expect(result?.pendingAction?.actions[1]).toMatchObject({
@@ -444,11 +518,11 @@ describe("home assistant local planner", () => {
           taskId: "task-clarify-complete",
           patch: {
             startAtISO: expect.any(String),
-            deadlineISO: expect.any(String),
           },
         },
       ],
     });
+    expect(result?.reply).toContain("开始时间晚于截止时间");
     expect(result?.clarifyState).toBeNull();
   });
 

@@ -11,6 +11,10 @@ describe("home assistant skills", () => {
     expect(detectAssistantSkill("把今日日程安排调整一下")).toBe("schedule_ops");
   });
 
+  it("routes time queries to time_reader skill", () => {
+    expect(detectAssistantSkill("您能读取现在的时间吗")).toBe("time_reader");
+  });
+
   it("provides tool catalog for schedule skill", () => {
     expect(getSkillToolCatalog("schedule_ops")).toContain("get_today_schedule_summary");
     expect(getSkillToolCatalog("schedule_ops")).toContain("update_task_core(startAtISO/estimatedMinutes/snoozeUntilISO/status)");

@@ -32,3 +32,10 @@ pnpm-debug.log*
 # misc
 .DS_Store
 Thumbs.db
+
+# android local/build artifacts
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
+*.apk

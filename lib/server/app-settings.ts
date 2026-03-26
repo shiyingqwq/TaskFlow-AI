@@ -18,6 +18,23 @@ export type AppSettingsRecord = {
   updatedAt?: Date | string;
 };
 
+function parseJsonObject(input: unknown) {
+  if (input && typeof input === "object" && !Array.isArray(input)) {
+    return input as Record<string, unknown>;
+  }
+  if (typeof input === "string" && input.trim()) {
+    try {
+      const parsed = JSON.parse(input);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
 function isDatabaseNotReadyError(error: unknown) {
   if (!(error instanceof Error)) {
     return false;
@@ -153,6 +170,16 @@ export async function updateAiSettings(input: {
 export async function updateCourseSchedule(input: { courseSchedule: unknown[]; courseTableConfig?: unknown }) {
   await ensureAppSettingsRow();
   const shouldUpdateTableConfig = input.courseTableConfig !== undefined;
+  let nextCourseTableConfig: unknown = undefined;
+  if (shouldUpdateTableConfig) {
+    const current = await readAppSettingsRecord();
+    const currentConfig = parseJsonObject(current.courseTableConfig);
+    const incomingConfig = parseJsonObject(input.courseTableConfig);
+    nextCourseTableConfig = {
+      ...currentConfig,
+      ...incomingConfig,
+    };
+  }
   await prisma.$executeRawUnsafe(
     shouldUpdateTableConfig
       ? `
@@ -166,7 +193,28 @@ export async function updateCourseSchedule(input: { courseSchedule: unknown[]; c
       WHERE id = 'default'
     `,
     JSON.stringify(input.courseSchedule),
-    ...(shouldUpdateTableConfig ? [JSON.stringify(input.courseTableConfig)] : []),
+    ...(shouldUpdateTableConfig ? [JSON.stringify(nextCourseTableConfig)] : []),
+  );
+
+  return readAppSettingsRecord();
+}
+
+export async function patchCourseTableConfig(patch: Record<string, unknown>) {
+  await ensureAppSettingsRow();
+  const current = await readAppSettingsRecord();
+  const currentConfig = parseJsonObject(current.courseTableConfig);
+  const nextConfig = {
+    ...currentConfig,
+    ...patch,
+  };
+
+  await prisma.$executeRawUnsafe(
+    `
+      UPDATE AppSetting
+      SET courseTableConfig = ?, updatedAt = CURRENT_TIMESTAMP
+      WHERE id = 'default'
+    `,
+    JSON.stringify(nextConfig),
   );
 
   return readAppSettingsRecord();

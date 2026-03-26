@@ -204,7 +204,7 @@ async function expandImpactedTaskIds(seedTaskIds: string[]) {
 }
 
 export async function refreshDashboardFocusSummary() {
-  const dashboard = await getDashboardData("all");
+  const dashboard = await getDashboardData("all", { skipPriorityRefresh: true });
   const focusReviewTask = dashboard.reviewTasks[0] ?? null;
   const focusWaitingTask = dashboard.dueWaitingTasks[0] ?? null;
   const focusBlockedTask = dashboard.blockedTasks[0] ?? null;
@@ -1859,12 +1859,20 @@ export async function restoreTaskProgressLogs(taskId: string, completedAts: Arra
 }
 
 type DashboardDataSection = "all" | "overview" | "today" | "courses" | "tasks" | "sources" | "settings";
+const DASHBOARD_PRIORITY_REFRESH_INTERVAL_MS = 60 * 1000;
+let lastDashboardPriorityRefreshAt = 0;
 
-export async function getDashboardData(filter = "all", options?: { section?: DashboardDataSection }) {
+export async function getDashboardData(filter = "all", options?: { section?: DashboardDataSection; skipPriorityRefresh?: boolean }) {
   try {
     await sanitizeTaskJsonColumns();
     const section = options?.section ?? "all";
     const needsTaskData = ["all", "overview", "today", "tasks", "settings"].includes(section);
+    const shouldRefreshPriority = needsTaskData && !options?.skipPriorityRefresh;
+    const now = Date.now();
+    if (shouldRefreshPriority && now - lastDashboardPriorityRefreshAt > DASHBOARD_PRIORITY_REFRESH_INTERVAL_MS) {
+      await recalculateAllPriorities();
+      lastDashboardPriorityRefreshAt = now;
+    }
     const needsRichTaskData = ["all", "tasks"].includes(section);
     const needsBlockingContext = ["all", "overview", "today"].includes(section);
     const needsRecentSources = ["all", "sources"].includes(section);
